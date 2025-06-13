@@ -1,48 +1,32 @@
 #include <iostream>
 #include <math.h>
+#include <complex>
+#include <vector>
+#include <typeinfo>
+#include <memory>
 
 #include "implot.h"
 
 #include "helper_funcs.h"
 #include "fir_filter.hpp"
+#include "polynomial.hpp"
 
-void key_callback(GLFWwindow* window, int key, int, int action, int){
-    if(key == GLFW_KEY_ESCAPE && action == GLFW_PRESS){
-        glfwSetWindowShouldClose(window, GLFW_TRUE);
-    }
-}
 
 
 int main(){
-    GLFWwindow* window = glfw_makeNewWindow(1920, 720, "Yet Another DSP Library", true, true, true);
-    ImPlot::CreateContext();
-    glfwSetKeyCallback(window, key_callback);
+    // std::vector<double> a = {1,2,3,4};
+    polynomial<double> a{1,2,3,4, 20};
 
-    FIR_FILTER filt;
-    float betaSlider = 0.5;
+    polynomial<double> b;
+    b = {1,5,6,10};
 
-    while (!glfwWindowShouldClose(window)){
-        glfwPollEvents();
-        glfw_frame();
+    std::cout<<"Front: "<<b.front()<<", Back: "<<b.back()<<"\n";
 
-        filt.designTaps(4, betaSlider, 16);
-        double* taps = filt.getTaps();
-        size_t ntaps = filt.getNumTaps();
+    std::cout<<"Degree: "<<b.degree()<<"\n";
 
-
-        ImGui::Begin("Data Grapher");
-        ImGui::SliderFloat("Beta", &betaSlider, 0.1, 1);
-        if(ImPlot::BeginPlot("Plots")){
-            ImPlot::PlotBars("Taps", taps, ntaps);
-            ImPlot::EndPlot();
-        }
-        ImGui::End();
-
-        glfw_render(window);
-    }
-
-    glfw_cleanup(window);
-    ImPlot::DestroyContext();
+    std::cout<<"Coefficients: ";
+    for(auto&& v:b)
+        std::cout<<v<<" ";
 
     return 0;
 }
