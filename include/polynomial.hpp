@@ -355,7 +355,6 @@ public:
      * @return const_reference 
      */
     constexpr const_reference back() const{return *std::prev(cend());}
-
     
     constexpr iterator begin(){return iterator(&_coef[0]);}
     constexpr const_iterator begin() const{return const_iterator(&_coef[0]);}
@@ -372,6 +371,45 @@ public:
     constexpr reverse_iterator rend(){return reverse_iterator(&_coef[-1]);}
     constexpr const_reverse_iterator rend() const{return const_reverse_iterator(&_coef[-1]);}
     constexpr const_reverse_iterator crend() const{return const_reverse_iterator(&_coef[-1]);}
+
+    /**
+     * @brief Resize the polynomial to be of degree count. Will reallocate more memory if necessary.
+     * @param count The new degree of the polynomial
+     */
+    constexpr void resize(const size_type& count){
+        if(_n > count){
+            std::destroy(begin() + count + 1, end());
+            _n = count;
+        } else if(_n < count){
+            pointer _temp = std::allocator_traits<Allocator>::allocate(_alloc, count + 1);
+            std::uninitialized_copy_n(begin(), _n + 1, _temp);
+            std::uninitialized_value_construct_n(_temp + _n + 1, count - _n);
+            std::destroy(begin(), end());
+            std::allocator_traits<Allocator>::deallocate(_alloc, _coef, _n + 1);
+            _coef = _temp;
+            _n = count;
+        } else return;
+    }
+
+    /**
+     * @brief Resize the polynomial to be of degree count. Will reallocate more memory if necessary.
+     * @param count The new degree of the polynomial
+     * @param value A default value to initialize new memory to.
+     */
+    constexpr void resize(const size_type& count, const value_type& value){
+        if(_n > count){
+            std::destroy(begin() + count + 1, end());
+            _n = count;
+        } else if(_n < count){
+            pointer _temp = std::allocator_traits<Allocator>::allocate(_alloc, count + 1);
+            std::uninitialized_copy_n(begin(), _n + 1, _temp);
+            std::uninitialized_fill_n(_temp + _n + 1, count - _n, value);
+            std::destroy(begin(), end());
+            std::allocator_traits<Allocator>::deallocate(_alloc, _coef, _n + 1);
+            _coef = _temp;
+            _n = count;
+        } else return;
+    }
 
 
 };
