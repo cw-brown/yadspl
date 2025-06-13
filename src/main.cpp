@@ -5,38 +5,25 @@
 #include <typeinfo>
 #include <memory>
 
-#include "implot.h"
+// #include "implot.h"
 
-#include "helper_funcs.h"
-#include "fir_filter.hpp"
+// #include "helper_funcs.h"
+// #include "fir_filter.hpp"
 #include "polynomial.hpp"
 
-
-
 int main(){
-    // std::vector<double> a = {1,2,3,4};
-    polynomial<double> a{1,2,3,4, 20};
+    poly<double, 5> a = {1,2,3,4,5,2};
+    poly<double, 5> b = {2,4,5,6,2,1};
 
-    polynomial<double> b;
-    b = {1,5,6,10, 30, 12, 19};
+    std::cout<<std::boolalpha<<(a==b);
 
-    std::cout<<"Before resize: ";
-    for(auto&& v:b)
-        std::cout<<v<<" ";
-    std::cout<<"\n";
+    // poly<double, 20> a;
 
-    b.resize(3);
-
-    std::cout<<"After resize to degree 3: ";
-    for(auto&& v:b)
-        std::cout<<v<<" ";
-    std::cout<<"\n";
-
-    b.resize(12, 2.5);
-    std::cout<<"After resize to degree 12: ";
-    for(auto&& v:b)
-        std::cout<<v<<" ";
-    std::cout<<"\n";
+    // std::cout<<"Degree: "<<a.degree()<<"\n";
+    // std::cout<<"Coefficients: ";
+    // for(auto&& v:a)
+    //     std::cout<<v<<" ";
+    // std::cout<<"\n";
 
 
     return 0;
