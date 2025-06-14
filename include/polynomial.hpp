@@ -430,5 +430,24 @@ public:
         return _out;
     }
 
+    [[nodiscard]]
+    constexpr friend poly
+    operator/(const poly& __obj, const __T& __constant) noexcept
+    {
+        poly _out = __obj;
+        for(size_type k = 0; k < __N + 1; ++k)
+            _out[k] /= __constant;
+        return _out;
+    }
+
+    [[nodiscard]]
+    constexpr poly
+    operator/(const poly& __other) noexcept
+    { // Element-wise division operation, because I'm not implementing actual polynomial division.
+        poly _out = *this;
+        for(size_type k = 0; k < __N + 1; ++k)
+            _out[k] /= __other[k];
+        return _out;
+    }
 };
 #endif

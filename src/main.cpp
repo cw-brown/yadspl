@@ -25,10 +25,10 @@ int main(){
         (b + b) == (poly<double, 1>{14.0, 4.0}) &&
         (b + c) == (poly<double, 1>{9.0, 2.0}) &&
         (c + c) == (poly<double, 0>{4.0}) &&
-        (b + 4.0) == (poly<double, 1>{11.0, 2.0}) &&
-        (c + 4.0) == (poly<double, 0>{6.0}) &&
-        (4.0 + b) == (poly<double, 1>{11.0, 2.0}) &&
-        (4.0 + c) == (poly<double, 0>{6.0}) &&
+        (b + 2.0) == (poly<double, 1>{9.0, 2.0}) &&
+        (c + 2.0) == (poly<double, 0>{4.0}) &&
+        (2.0 + b) == (poly<double, 1>{9.0, 2.0}) &&
+        (2.0 + c) == (poly<double, 0>{4.0}) &&
     "");
 
     assert
@@ -50,9 +50,22 @@ int main(){
         "Multiplication operations:" &&
         (a * b) == (poly<double, 4>{-84.0, 81.0, 37.0, -12.0, -4.0}) &&
         (b * a) == (poly<double, 4>{-84.0, 81.0, 37.0, -12.0, -4.0}) &&
+        (b * b) == (poly<double, 2>{49.0, 28.0, 4.0}) &&
+        (b * c) == (poly<double, 1>{14.0, 4.0}) &&
+        (c * c) == (poly<double, 0>{4.0}) &&
+        (b * 2.0) == (poly<double, 1>{14.0, 4.0}) &&
+        (c * 2.0) == (poly<double, 0>{4.0}) &&
+        (2.0 * b) == (poly<double, 1>{14.0, 4.0}) &&
+        (2.0 * c) == (poly<double, 0>{4.0}) &&
     "");
 
-    auto e = b*a;
+    assert
+    (""
+        "Division Operations:" &&
+        (b / 2.0) == (poly<double, 1>{7.0/2.0, 1.0}) &&
+    "");
+
+    auto e = b / 2.0;
     for(auto&&v : e)
         std::cout<<v<<" ";
 
