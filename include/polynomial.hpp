@@ -104,11 +104,12 @@ public:
 
 /**
  * @brief A polynomial class with math operators. Features specializations for constants and conversions between complex types.
- * It is always constructible via aggregates.
+ * It is always constructible via aggregates. Represents a polynomial as p[0] + p[1]*x + ... p[N]*x^N.
  * @tparam __T Type of element. Must be a complete type.
  * @tparam __N The degree of the polynomial.
  */
 template<class __T, std::size_t __N>
+requires(std::is_move_constructible_v<__T> && std::is_move_assignable_v<__T> && std::is_arithmetic_v<__T>)
 class poly{
 public:
     typedef __T value_type;
@@ -272,13 +273,77 @@ public:
     constexpr std::compare_three_way_result_t<__T>
     operator<=>(const poly& __other) const noexcept
     { return std::lexicographical_compare_three_way(begin(), end(), __other.begin(), __other.end()); }
+
+    template<size_type __M>
+    requires(__N >= __M)
+    constexpr poly&
+    operator+=(const poly<__T, __M>& __other) noexcept
+    {
+        for(size_type k = 0; k < __M + 1; ++k)
+            __c[k] += __other[k];
+        return *this;
+    }
+
+    template<size_type __M>
+    requires(__N >= __M)
+    constexpr poly&
+    operator-=(const poly<__T, __M>& __other) noexcept
+    {
+        for(size_type k = 0; k < __M + 1; ++k)
+            __c[k] -= __other[k];
+        return *this;
+    }
+
+    template<size_type __M>
+    requires(__N >= __M)
+    constexpr poly
+    operator+(const poly<__T, __M>& __other) noexcept
+    {
+        poly<__T, __N> _out = *this;
+        for(size_type k = 0; k < __M + 1; ++k)
+            _out[k] += __other[k];
+        return _out;
+    }
+
+    template<size_type __M>
+    requires(__M > __N)
+    constexpr poly<__T, __M>
+    operator+(const poly<__T, __M>& __other) noexcept
+    {
+        poly<__T, __M> _out = __other;
+        for(size_type k = 0; k < __N + 1; ++k)
+            _out[k] += __c[k];
+        return _out;
+    }
+
+    template<size_type __M>
+    requires(__N >= __M)
+    constexpr poly
+    operator-(const poly<__T, __M>& __other) noexcept
+    {}
+
+    template<size_type __M>
+    [[nodiscard]]
+    constexpr poly<__T, __N + __M>
+    operator*(const poly<__T, __M>& __other) noexcept
+    { // Developed from reference https://www.mathworks.com/help/matlab/ref/conv.html
+        poly<__T, __N + __M> _out;
+        _out.fill(__T());
+        for(size_type k = 0; k <= __N + __M; ++k){
+            for(size_type j = std::max(1ULL, k - __M + 1) - 1; j <= std::min(k, __N); ++j)
+                _out[k] += __c[j] * __other[k - j];
+        }
+        return _out;
+    }
+
+    [[nodiscard]]
+    constexpr poly
+    operator*(const __T& __constant) noexcept
+    {
+        poly<__T, __N> _out = *this;
+        for(size_type k = 0; k < __N + 1; ++k)
+            _out[k] *= __constant;
+        return _out;
+    }
 };
-
-template<class __T, std::size_t __N>
-requires(std::is_swappable_v<__T>)
-constexpr void
-swap(poly<__T, __N>& _lhs, poly<__T, __N>& _rhs)
-noexcept(noexcept(_lhs.swap(_rhs)))
-{}
-
 #endif

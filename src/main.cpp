@@ -4,6 +4,7 @@
 #include <vector>
 #include <typeinfo>
 #include <memory>
+#include <cassert>
 
 // #include "implot.h"
 
@@ -12,18 +13,20 @@
 #include "polynomial.hpp"
 
 int main(){
-    poly<double, 5> a = {1,2,3,4,5,2};
-    poly<double, 5> b = {2,4,5,6,2,1};
+    poly<double, 3> a = {-12.0, 15.0, 1.0, -2.0}; // -12 + 15x + 1x^2 - 2x^3
+    poly<double, 1> b = {7.0, 2.0}; // 7 + 2x
+    poly<double, 0> c = {2.0}; // 2.0
 
-    std::cout<<std::boolalpha<<(a<=b);
+    assert
+    (""
+        "Addition of polynomials:" &&
+        (a + b) == (poly<double, 3>{-5.0, 17.0, 1.0, -2.0}) && 
+        (b + a) == (poly<double, 3>{-5.0, 17.0, 1.0, -2.0}) && 
+        (b + b) == (poly<double, 1>{14.0, 4.0}) &&
+        (c + c) == (poly<double, 0>{4.0}) &&
+    "");
 
-    // poly<double, 20> a;
 
-    // std::cout<<"Degree: "<<a.degree()<<"\n";
-    // std::cout<<"Coefficients: ";
-    // for(auto&& v:a)
-    //     std::cout<<v<<" ";
-    // std::cout<<"\n";
 
 
     return 0;
