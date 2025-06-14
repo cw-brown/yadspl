@@ -15,7 +15,7 @@ int main(){
     poly<double, 5> a = {1,2,3,4,5,2};
     poly<double, 5> b = {2,4,5,6,2,1};
 
-    std::cout<<std::boolalpha<<(a==b);
+    std::cout<<std::boolalpha<<(a<=b);
 
     // poly<double, 20> a;
 

@@ -31,7 +31,31 @@ public:
 };
 
 template<class __T>
-class __riterator{
+class __const_iterator{
+public:
+    typedef std::bidirectional_iterator_tag iterator_category;
+    typedef __T value_type;
+    typedef size_t size_type;
+    typedef ptrdiff_t difference_type;
+    typedef const __T* pointer;
+    typedef const __T& reference;
+private:
+    pointer __ptr;
+public:
+    constexpr __const_iterator(): __ptr(nullptr){}
+    constexpr __const_iterator(pointer _ptr): __ptr(_ptr){}
+    constexpr __const_iterator(const __const_iterator& other): __ptr(other.__ptr){}
+    constexpr __const_iterator& operator=(const __const_iterator& other){if(this != &other) __ptr = other.__ptr; return *this;}
+    constexpr reference operator*() const{return *__ptr;}
+    constexpr __const_iterator& operator++(){++__ptr; return *this;}
+    constexpr __const_iterator operator++(int){auto __tmp = *this; ++__ptr; return __tmp;}
+    constexpr __const_iterator& operator--(){--__ptr; return *this;}
+    constexpr __const_iterator operator--(int){auto __tmp = *this; --__ptr; return __tmp;}
+    constexpr bool operator==(const __const_iterator& other) const{return __ptr == other.__ptr;}
+};
+
+template<class __T>
+class __reverse_iterator{
 public:
     typedef std::bidirectional_iterator_tag iterator_category;
     typedef __T value_type;
@@ -42,19 +66,41 @@ public:
 private:
     pointer __ptr;
 public:
-    constexpr __riterator(): __ptr(nullptr){}
-    constexpr __riterator(pointer _ptr): __ptr(_ptr){}
-    constexpr __riterator(const __riterator& other): __ptr(other.__ptr){}
-    constexpr __riterator& operator=(const __riterator& other){if(this != &other) __ptr = other.__ptr; return *this;}
+    constexpr __reverse_iterator(): __ptr(nullptr){}
+    constexpr __reverse_iterator(pointer _ptr): __ptr(_ptr){}
+    constexpr __reverse_iterator(const __reverse_iterator& other): __ptr(other.__ptr){}
+    constexpr __reverse_iterator& operator=(const __reverse_iterator& other){if(this != &other) __ptr = other.__ptr; return *this;}
     constexpr reference operator*() const{return *__ptr;}
-    constexpr __riterator& operator++(){--__ptr; return *this;}
-    constexpr __riterator operator++(int){auto __tmp = *this; --__ptr; return __tmp;}
-    constexpr __riterator& operator--(){++__ptr; return *this;}
-    constexpr __riterator operator--(int){auto __tmp = *this; ++__ptr; return __tmp;}
-    constexpr bool operator==(const __riterator& other) const{return __ptr == other.__ptr;}
+    constexpr __reverse_iterator& operator++(){--__ptr; return *this;}
+    constexpr __reverse_iterator operator++(int){auto __tmp = *this; --__ptr; return __tmp;}
+    constexpr __reverse_iterator& operator--(){++__ptr; return *this;}
+    constexpr __reverse_iterator operator--(int){auto __tmp = *this; ++__ptr; return __tmp;}
+    constexpr bool operator==(const __reverse_iterator& other) const{return __ptr == other.__ptr;}
 };
 
-
+template<class __T>
+class __const_reverse_iterator{
+public:
+    typedef std::bidirectional_iterator_tag iterator_category;
+    typedef __T value_type;
+    typedef size_t size_type;
+    typedef ptrdiff_t difference_type;
+    typedef const __T* pointer;
+    typedef const __T& reference;
+private:
+    pointer __ptr;
+public:
+    constexpr __const_reverse_iterator(): __ptr(nullptr){}
+    constexpr __const_reverse_iterator(pointer _ptr): __ptr(_ptr){}
+    constexpr __const_reverse_iterator(const __const_reverse_iterator& other): __ptr(other.__ptr){}
+    constexpr __const_reverse_iterator& operator=(const __const_reverse_iterator& other){if(this != &other) __ptr = other.__ptr; return *this;}
+    constexpr reference operator*() const{return *__ptr;}
+    constexpr __const_reverse_iterator& operator++(){--__ptr; return *this;}
+    constexpr __const_reverse_iterator operator++(int){auto __tmp = *this; --__ptr; return __tmp;}
+    constexpr __const_reverse_iterator& operator--(){++__ptr; return *this;}
+    constexpr __const_reverse_iterator operator--(int){auto __tmp = *this; ++__ptr; return __tmp;}
+    constexpr bool operator==(const __const_reverse_iterator& other) const{return __ptr == other.__ptr;}
+};
 
 /**
  * @brief A polynomial class with math operators. Features specializations for constants and conversions between complex types.
@@ -73,9 +119,9 @@ public:
     typedef value_type& reference;
     typedef const value_type& const_reference;
     typedef __iterator<__T> iterator;
-    typedef __iterator<__T> const_iterator;
-    typedef __riterator<__T> reverse_iterator;
-    typedef __riterator<__T> const_reverse_iterator;
+    typedef __const_iterator<__T> const_iterator;
+    typedef __reverse_iterator<__T> reverse_iterator;
+    typedef __const_reverse_iterator<__T> const_reverse_iterator;
 
     __T __c[__N + 1];
 
@@ -178,9 +224,9 @@ public:
 
     constexpr const_reference
     at(size_type __n) const
-    { return __n < __N + 1 ? __c[__n]
-    : ( std::__throw_out_of_range_fmt("poly::at: __n (which is %zu) >= __N + 1 (which is %zu)", __n, __N + 1),
-        __c[__n]); }
+    { if(__n >= __N + 1) 
+        std::__throw_out_of_range_fmt("poly::at: __n (which is %zu) >= __N + 1 (which is %zu)", __n, __N + 1);
+    return __c[__n]; }
 
     [[nodiscard]]
     constexpr reference
@@ -227,5 +273,12 @@ public:
     operator<=>(const poly& __other) const noexcept
     { return std::lexicographical_compare_three_way(begin(), end(), __other.begin(), __other.end()); }
 };
+
+template<class __T, std::size_t __N>
+requires(std::is_swappable_v<__T>)
+constexpr void
+swap(poly<__T, __N>& _lhs, poly<__T, __N>& _rhs)
+noexcept(noexcept(_lhs.swap(_rhs)))
+{}
 
 #endif
