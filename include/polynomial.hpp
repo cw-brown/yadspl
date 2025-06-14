@@ -296,6 +296,7 @@ public:
 
     template<size_type __M>
     requires(__N >= __M)
+    [[nodiscard]]
     constexpr poly
     operator+(const poly<__T, __M>& __other) noexcept
     {
@@ -307,6 +308,7 @@ public:
 
     template<size_type __M>
     requires(__M > __N)
+    [[nodiscard]]
     constexpr poly<__T, __M>
     operator+(const poly<__T, __M>& __other) noexcept
     {
@@ -316,13 +318,70 @@ public:
         return _out;
     }
 
-    template<size_type __M>
-    requires(__N >= __M)
-    constexpr poly
-    operator-(const poly<__T, __M>& __other) noexcept
-    {}
+    [[nodiscard]]
+    constexpr friend poly
+    operator+(const poly& __obj, const __T& __constant) noexcept
+    {
+        poly _out = __obj;
+        _out[0] += __constant;
+        return _out;
+    }
+
+    [[nodiscard]]
+    constexpr friend poly
+    operator+(const __T& __constant, const poly& __obj) noexcept
+    {
+        poly _out = __obj;
+        _out[0] += __constant;
+        return _out;
+    }
 
     template<size_type __M>
+    requires(__N >= __M)
+    [[nodiscard]]
+    constexpr poly
+    operator-(const poly<__T, __M>& __other) noexcept
+    {
+        poly<__T, __N> _out = *this;
+        for(size_type k = 0; k < __M + 1; ++k)
+            _out[k] -= __other[k];
+        return _out;
+    }
+
+    template<size_type __M>
+    requires(__M > __N)
+    [[nodiscard]]
+    constexpr poly<__T, __M>
+    operator-(const poly<__T, __M>& __other) noexcept
+    {
+        poly<__T, __M> _out = __T() - __other;
+        for(size_type k = 0; k < __N + 1; ++k)
+            _out[k] += __c[k];
+        return _out;
+    }
+
+    [[nodiscard]]
+    constexpr friend poly
+    operator-(const poly& __obj, const __T& __constant) noexcept
+    {
+        poly _out = __obj;
+        _out[0] -= __constant;
+        return _out;
+    }
+
+    [[nodiscard]]
+    constexpr friend poly
+    operator-(const __T& __constant, const poly& __obj) noexcept
+    {
+        poly _out = __obj;
+        for(size_type k = 0; k < __N + 1; ++k)
+            if(k == 0) _out[k] = __constant - __obj[k]; 
+            else _out[k] = __T() - __obj[k];
+        return _out;
+    }
+
+    template<size_type __M>
+    requires(__N >= __M)
     [[nodiscard]]
     constexpr poly<__T, __N + __M>
     operator*(const poly<__T, __M>& __other) noexcept
@@ -336,14 +395,40 @@ public:
         return _out;
     }
 
+    template<size_type __M>
+    requires(__M > __N)
     [[nodiscard]]
-    constexpr poly
-    operator*(const __T& __constant) noexcept
+    constexpr poly<__T, __N + __M>
+    operator*(const poly<__T, __M>& __other) noexcept
+    { // Developed from reference https://www.mathworks.com/help/matlab/ref/conv.html
+        poly<__T, __N + __M> _out;
+        _out.fill(__T());
+        for(size_type k = 0; k <= __N + __M; ++k){
+            for(size_type j = std::max(1ULL, k - __N + 1) - 1; j <= std::min(k, __M); ++j)
+                _out[k] += __other[j] * __c[k - j];
+        }
+        return _out;
+    }
+
+    [[nodiscard]]
+    constexpr friend poly
+    operator*(const poly& __obj, const __T& __constant) noexcept
     {
-        poly<__T, __N> _out = *this;
+        poly _out = __obj;
         for(size_type k = 0; k < __N + 1; ++k)
             _out[k] *= __constant;
         return _out;
     }
+
+    [[nodiscard]]
+    constexpr friend poly
+    operator*(const __T& __constant,const poly& __obj) noexcept
+    {
+        poly _out = __obj;
+        for(size_type k = 0; k < __N + 1; ++k)
+            _out[k] *= __constant;
+        return _out;
+    }
+
 };
 #endif

@@ -19,12 +19,42 @@ int main(){
 
     assert
     (""
-        "Addition of polynomials:" &&
+        "Addition operations:" &&
         (a + b) == (poly<double, 3>{-5.0, 17.0, 1.0, -2.0}) && 
         (b + a) == (poly<double, 3>{-5.0, 17.0, 1.0, -2.0}) && 
         (b + b) == (poly<double, 1>{14.0, 4.0}) &&
+        (b + c) == (poly<double, 1>{9.0, 2.0}) &&
         (c + c) == (poly<double, 0>{4.0}) &&
+        (b + 4.0) == (poly<double, 1>{11.0, 2.0}) &&
+        (c + 4.0) == (poly<double, 0>{6.0}) &&
+        (4.0 + b) == (poly<double, 1>{11.0, 2.0}) &&
+        (4.0 + c) == (poly<double, 0>{6.0}) &&
     "");
+
+    assert
+    (""
+        "Subtraction operations:" &&
+        (a - b) == (poly<double, 3>{-19.0, 13.0, 1.0, -2.0}) &&
+        (b - a) == (poly<double, 3>{19.0, -13.0, -1.0, 2.0}) &&
+        (b - b) == (poly<double, 1>{0.0, 0.0}) &&
+        (b - c) == (poly<double, 1>{5.0, 2.0}) &&
+        (c - c) == (poly<double, 0>{0.0}) && 
+        (b - 2.0) == (poly<double, 1>{5.0, 2.0}) &&
+        (c - 2.0) == (poly<double, 0>{0.0}) &&
+        (2.0 - b) == (poly<double, 1>{-5.0, -2.0}) &&
+        (2.0 - c) == ((poly<double, 0>{0.0})) &&
+    "");
+
+    assert
+    (""
+        "Multiplication operations:" &&
+        (a * b) == (poly<double, 4>{-84.0, 81.0, 37.0, -12.0, -4.0}) &&
+        (b * a) == (poly<double, 4>{-84.0, 81.0, 37.0, -12.0, -4.0}) &&
+    "");
+
+    auto e = b*a;
+    for(auto&&v : e)
+        std::cout<<v<<" ";
 
 
 
