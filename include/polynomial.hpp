@@ -9,7 +9,7 @@
 template<class __T>
 class __iterator{
 public:
-    typedef std::random_access_iterator_tag iterator_category;
+    typedef std::contiguous_iterator_tag iterator_category;
     typedef __T value_type;
     typedef size_t size_type;
     typedef ptrdiff_t difference_type;
@@ -46,7 +46,7 @@ public:
 template<class __T>
 class __const_iterator{
 public:
-    typedef std::random_access_iterator_tag iterator_category;
+    typedef std::contiguous_iterator_tag iterator_category;
     typedef __T value_type;
     typedef size_t size_type;
     typedef ptrdiff_t difference_type;
@@ -83,7 +83,7 @@ public:
 template<class __T>
 class __reverse_iterator{
 public:
-    typedef std::random_access_iterator_tag iterator_category;
+    typedef std::contiguous_iterator_tag iterator_category;
     typedef __T value_type;
     typedef size_t size_type;
     typedef ptrdiff_t difference_type;
@@ -120,7 +120,7 @@ public:
 template<class __T>
 class __const_reverse_iterator{
 public:
-    typedef std::random_access_iterator_tag iterator_category;
+    typedef std::contiguous_iterator_tag iterator_category;
     typedef __T value_type;
     typedef size_t size_type;
     typedef ptrdiff_t difference_type;

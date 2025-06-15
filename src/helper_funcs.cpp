@@ -1,6 +1,7 @@
 #include "helper_funcs.h"
 
 #include <exception>
+#include <cmath>
 
 GLFWwindow* glfw_makeNewWindow(int width, int height, const char* name, bool fullscreen, bool darkmode, bool vsync){
     if(!glfwInit()) return nullptr;
@@ -62,4 +63,12 @@ void glfw_frame(){
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
+}
+
+double AWGN(const double& N0, const double& bandwidth){
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    double _sigma = std::sqrt(N0*bandwidth);
+    std::normal_distribution d(1.0, _sigma);
+    return d(gen);
 }
