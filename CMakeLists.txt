@@ -22,7 +22,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 if(MSVC)
     add_compile_options(/W4 /permissive-)
 else()
-    add_compile_options(-Wall -Wextra -Wpedantic -O0 -fconcepts-diagnostics-depth=2)
+    add_compile_options(-Wall -Wextra -Wpedantic -O3 -fconcepts-diagnostics-depth=2)
 endif()
 
 # included libraries and headers
