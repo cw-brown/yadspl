@@ -11,17 +11,37 @@
 #include <complex>
 
 enum class filter_type{
+    Root_Raised_Cosine,
+    Lowpass_Ideal,
+    Highpass_Ideal,
+    Bandpass_Ideal,
+    Bandstop_Ideal
+};
+
+enum class window_type{
     None,
-    Root_Raised_Cosine
+    Rectangular,
+    Triangular,
+    Von_Hann,
+    Hamming,
+    Blackman_Harris,
+    Gaussian,
+    Tukey
 };
 
 /**
  * @brief A filter class which holds its own taps. Automatically updates its type depending on which kind of filter was designed.
- * Currently has root-raised cosine, raised cosine, and pole zero filters. All data is double precision.
+ * All FIR filters must have a type, and different types are not interoperable. Filters can also be provided with a window that will modify the taps. 
+ * 
+ * HOW TO USE:
+ * 
+ * 1) Call design() and provide the arguments necessary to construct the specific filter type.
+ * 
+ * 2) Call synthesize(). If your filter does not have a window, this isn't strictly necessary, but doing it for a None window will optimize to a no-op, and it will be easy to implement a window without changing any other code.
  * 
  * Approach was based on "Digital Filter Designer's Handbook With C++ Algorithms" by Rorabaugh.
  */
-template<class __T, filter_type __F>
+template<class __T, filter_type __F, window_type __W = window_type::None>
 requires std::is_floating_point_v<__T>
 class fir_filter{
 public:
@@ -34,10 +54,12 @@ public:
 private:
     size_type _n;
     pointer _taps;
-    pointer _resp;
+    pointer _mag_resp;
+    pointer _ang_resp;
     pointer _freqs;
     std::allocator<__T> _alloc;
     value_type PI = std::numbers::pi_v<__T>;
+    value_type eps = static_cast<__T>(1e-5);
 public:
     constexpr fir_filter(): _n(0), _taps(nullptr){}
     constexpr fir_filter(const fir_filter& other): _n(other._n), _taps(other._taps){}
@@ -45,7 +67,8 @@ public:
 
     constexpr size_type getNumTaps() const noexcept{return _n;}
     constexpr pointer getTaps() const noexcept{return _taps;}
-    constexpr pointer getMagnitudeResponse() const noexcept{return _resp;}
+    constexpr pointer getMagnitudeResponse() const noexcept{return _mag_resp;}
+    constexpr pointer getPhaseResponse() const noexcept{return _ang_resp;}
     constexpr pointer getFrequencyPoints() const noexcept{return _freqs;}
 
     constexpr void design(const size_type& sps, const value_type& beta, const size_type& span) 
@@ -54,7 +77,6 @@ public:
         if(span <= 0.0) throw std::logic_error("Span must be greater than 0 symbols");
         if(beta <= 0.0 || beta > 1.0) throw std::logic_error("Beta must be in range (0, 1]");
 
-        value_type eps = static_cast<__T>(1e-5);
         value_type power = 0.0;
         size_type n = 2*span*sps + 1;
         _n = n;
@@ -75,14 +97,120 @@ public:
             }
             power += _taps[i];
         }
-        power = std::sqrt(power);
         for(size_type i = 0; i < n; ++i){
             _taps[i] /= power;
         }
     }
 
+    constexpr void design(const size_type& order, const value_type& fc)
+    requires(__F == filter_type::Lowpass_Ideal){
+        _taps = _alloc.allocate(order);
+        _n = order;
+        difference_type n_max = order % 2 ? (order - 1)/2 : order/2;
+        if(order % 2) _taps[n_max] = fc / PI;
+        for(difference_type n = 0; n < n_max; ++n){
+            difference_type m = n - n_max;
+            _taps[n] = std::sin(m*fc)/m/PI;
+            _taps[order - 1 - n] = _taps[n];
+        }
+    }
+
+    constexpr void design(const size_type& order, const value_type& fc)
+    requires(__F == filter_type::Highpass_Ideal){
+        _taps = _alloc.allocate(order);
+        _n = order;
+        difference_type n_max = order % 2 ? (order - 1)/2 : order/2;
+        if(order % 2) _taps[n_max] = 1.0 - fc / PI;
+        for(difference_type n = 0; n < n_max; ++n){
+            difference_type m = n - n_max;
+            _taps[n] = -std::sin(m*fc)/m/PI;
+            _taps[order - 1 - n] = _taps[n];
+        }
+    }
+
+    constexpr void design(const size_type& order, const value_type& fc1, const value_type& fc2)
+    requires(__F == filter_type::Bandpass_Ideal){
+        _taps = _alloc.allocate(order);
+        _n = order;
+        difference_type n_max = order % 2 ? (order - 1)/2 : order/2;
+        if(order % 2) _taps[n_max] = (fc2 - fc1)/PI;
+        for(difference_type n = 0; n < n_max; ++n){
+            difference_type m = n - n_max;
+            _taps[n] = (std::sin(m*fc2) - std::sin(m*fc1))/m/PI;
+            _taps[order - 1 - n] = _taps[n];
+        }
+    }
+
+    constexpr void design(const size_type& order, const value_type& fc1, const value_type& fc2)
+    requires(__F == filter_type::Bandstop_Ideal){
+        _taps = _alloc.allocate(order);
+        _n = order;
+        difference_type n_max = order % 2 ? (order - 1)/2 : order/2;
+        if(order % 2) _taps[n_max] = 1.0 + (fc1 - fc2)/PI;
+        for(difference_type n = 0; n < n_max; ++n){
+            difference_type m = n - n_max;
+            _taps[n] = (std::sin(m*fc1) - std::sin(m*fc2))/m/PI;
+            _taps[order - 1 - n] = _taps[n];
+        }
+    }
+
+    constexpr void synthesize()
+    requires(__W == window_type::None){} // also a no-op, but is here for standards, so calling design() synthesize() always works
+
+    constexpr void synthesize()
+    requires(__W == window_type::Rectangular){} // does nothing lol, but needs to be here, probably optimized to no-op anyways
+
+    constexpr void synthesize()
+    requires(__W == window_type::Triangular){
+        value_type midpoint = static_cast<value_type>(_n - 1)/2.0;
+        for(size_type n = 0; n < _n; ++n){
+            _taps[n] *= 1.0 - std::abs((n - midpoint)/midpoint);
+        }
+    }
+
+    constexpr void synthesize()
+    requires(__W == window_type::Von_Hann){
+        for(size_type n = 0; n < _n; ++n){
+            _taps[n] *= 0.5*(1.0 - std::cos((2.0*PI*n)/(_n-1)));
+        }
+    }
+
+    constexpr void synthesize()
+    requires(__W == window_type::Hamming){
+        for(size_type n = 0; n < _n; ++n){
+            _taps[n] *= 0.54 - 0.46*std::cos((2.0*PI*n)/(_n-1));
+        }
+    }
+
+    constexpr void synthesize()
+    requires(__W == window_type::Blackman_Harris){
+        for(size_type n = 0; n < _n; ++n){
+            _taps[n] *= 0.35875 - 0.48829*std::cos(2.0*PI*n/_n) + 0.14128*std::cos(4.0*PI*n/_n) - 0.01168*std::cos(6.0*PI*n/_n);
+        }
+    }
+
+    constexpr void synthesize(const value_type& sigma = 0.4)
+    requires(__W == window_type::Gaussian){
+        for(size_type n = 0; n < _n; ++n){
+            _taps[n] *= std::exp(-0.5*std::pow((n - _n/2.0)/sigma/_n/2.0, 2.0));
+        }
+    }
+
+    constexpr void synthesize(const value_type& alpha = 0.4)
+    requires(__W == window_type::Tukey){
+        size_type m = _n - 1;
+        for(size_type n = 0; n < _n; ++n){
+            if(n < alpha*m/2.0){
+                _taps[n] *= 0.5*(1 + std::cos(PI*(2.0*n)/alpha/m - 1.0));
+            } else if(n > (_n - 1.0)*(1.0 - alpha/2.0)){
+                _taps[n] *= 0.5*(1 + std::cos(PI*(2.0*n)/alpha/m - 1.0));
+            }
+        }
+    }
+
     constexpr void response(const size_type& points){
-        _resp = _alloc.allocate(points);
+        _mag_resp = _alloc.allocate(points);
+        _ang_resp = _alloc.allocate(points);
         _freqs = _alloc.allocate(points);
         for(size_type idx = 0; idx < points; ++idx){
             __T lambda = idx*PI/points;
@@ -91,7 +219,8 @@ public:
                 work += _taps[tap_idx] * std::complex<__T>(std::cos(tap_idx*lambda), -1.0*std::sin(tap_idx*lambda));
             }
             _freqs[idx] = lambda;
-            _resp[idx] = 20.0 * std::log10(std::pow(std::sqrt(std::abs(work)), 2.0));
+            _mag_resp[idx] = 20.0 * std::log10(std::norm(work));
+            _ang_resp[idx] = std::arg(work);
         }
     }
 };

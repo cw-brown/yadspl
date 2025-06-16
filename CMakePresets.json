@@ -2,9 +2,8 @@
     "version": 8,
     "configurePresets": [
         {
-            "name": "Def",
-            "displayName": "Custom configure preset",
-            "description": "Sets Ninja generator, build and install directory",
+            "name": "debug",
+            "displayName": "debug build",
             "generator": "Ninja",
             "binaryDir": "${sourceDir}/out/build/${presetName}",
             "cacheVariables": {
