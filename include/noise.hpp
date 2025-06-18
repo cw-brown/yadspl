@@ -21,5 +21,13 @@ public:
         auto wgn = [this, &_d, &snr](_T& x){x += std::sqrt(snr)*_d(_gen);};
         std::for_each(first, last, wgn);
     }
+    _T* randomSignal(std::size_t len){
+        // Make a signal in the range [-1, 1] of size len
+        _T* out = new _T[len];
+        std::uniform_real_distribution<_T> dis(-1.0, 1.0);
+        for(std::size_t i = 0; i < len; ++i)
+            out[i] = dis(_gen);
+        return out;
+    }
 };
 #endif

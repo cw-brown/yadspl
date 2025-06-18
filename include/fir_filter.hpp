@@ -1,7 +1,6 @@
 #ifndef FIR_FILTER_H
 #define FIR_FILTER_H
 
-#include <array>
 #include <algorithm>
 #include <memory>
 #include <numeric>
@@ -9,13 +8,25 @@
 #include <cmath>
 #include <iostream>
 #include <complex>
+#include <utility>
+
+#include "basic_iterators.hpp"
 
 enum class filter_type{
+    /* Basic Root Raised Cosine */
     Root_Raised_Cosine,
+    /* Ideal lowpass filter based on the Fourier series method */
     Lowpass_Ideal,
+    /* Ideal highpass filter based on the Fourier series method */
     Highpass_Ideal,
+    /* Ideal bandpass filter based on the Fourier series method */
     Bandpass_Ideal,
-    Bandstop_Ideal
+    /* Ideal bandstop filter based on the Fourier series method */
+    Bandstop_Ideal,
+    /* Filter designed using frequency samples */
+    Frequency_Sampled,
+    /* Filter designed using frequency samples and optimized for stopband ripple */
+    Frequency_Sampled_Optimized
 };
 
 enum class window_type{
@@ -50,26 +61,43 @@ public:
     typedef std::ptrdiff_t difference_type;
     typedef __T* pointer;
     typedef __T& reference;
+    typedef __iterator<__T> iterator;
+    typedef __const_iterator<__T> const_iterator;
+    typedef __reverse_iterator<__T> reverse_iterator;
+    typedef __const_reverse_iterator<__T> const_reverse_iterator;
     typedef std::allocator_traits<std::allocator<__T>>::allocator_type allocator_type;
 private:
     size_type _n;
     pointer _taps;
-    pointer _mag_resp;
-    pointer _ang_resp;
-    pointer _freqs;
     std::allocator<__T> _alloc;
-    value_type PI = std::numbers::pi_v<__T>;
-    value_type eps = static_cast<__T>(1e-5);
+    static constexpr value_type PI = std::numbers::pi_v<__T>;
+    static constexpr value_type eps = static_cast<__T>(1e-5);
 public:
     constexpr fir_filter(): _n(0), _taps(nullptr){}
-    constexpr fir_filter(const fir_filter& other): _n(other._n), _taps(other._taps){}
+    constexpr fir_filter(const fir_filter& other): _n(other._n), _taps(_alloc.allocate(_n)){
+        std::uninitialized_copy_n(other._taps, other._n, _taps);
+    }
     constexpr fir_filter(fir_filter&& other) noexcept(true): _n(other._n), _taps(std::move(other._taps)){other._taps = nullptr;}
+    constexpr fir_filter& operator=(const fir_filter& other){
+        if(this != &other){
+            _n = other._n;
+            _taps = _alloc.allocate(_n);
+            std::uninitialized_copy_n(other._taps, _n, _taps);
+        }
+        return *this;
+    }
+    constexpr fir_filter& operator=(fir_filter&& other){
+        if(this != other){
+            _n = other._n;
+            _taps = std::move(other._taps);
+            other._taps = nullptr;
+        }
+        return *this;
+    }
+
 
     constexpr size_type getNumTaps() const noexcept{return _n;}
     constexpr pointer getTaps() const noexcept{return _taps;}
-    constexpr pointer getMagnitudeResponse() const noexcept{return _mag_resp;}
-    constexpr pointer getPhaseResponse() const noexcept{return _ang_resp;}
-    constexpr pointer getFrequencyPoints() const noexcept{return _freqs;}
 
     constexpr void design(const size_type& sps, const value_type& beta, const size_type& span) 
     requires(__F == filter_type::Root_Raised_Cosine){
@@ -154,6 +182,19 @@ public:
         }
     }
 
+    constexpr void design(const size_type& order, const pointer samples)
+    requires(__F == filter_type::Frequency_Sampled){
+        _n = order;
+        _taps = _alloc.allocate(_n);
+        size_type M = (_n - 1.0)/2.0;
+        for(size_type n = 0; n < order; ++n){
+            value_type tap = samples[0];
+            value_type x = 2.0*PI*(static_cast<value_type>(n) - M)/_n;
+            for(size_type k = 1; k <= (_n - 1)/2; ++k) tap += 2.0*std::cos(x*k)*samples[k];
+            _taps[n] = tap/_n;
+        }
+    }
+
     constexpr void synthesize()
     requires(__W == window_type::None){} // also a no-op, but is here for standards, so calling design() synthesize() always works
 
@@ -208,119 +249,49 @@ public:
         }
     }
 
-    constexpr void response(const size_type& points){
-        _mag_resp = _alloc.allocate(points);
-        _ang_resp = _alloc.allocate(points);
-        _freqs = _alloc.allocate(points);
+    constexpr std::pair<pointer, pointer> response(const size_type& points){
+        std::pair<pointer, pointer> out;
+        out.first = _alloc.allocate(points);
+        out.second = _alloc.allocate(points);
         for(size_type idx = 0; idx < points; ++idx){
             __T lambda = idx*PI/points;
             std::complex<__T> work(0.0, 0.0);
             for(size_type tap_idx = 0; tap_idx < _n; ++tap_idx){
                 work += _taps[tap_idx] * std::complex<__T>(std::cos(tap_idx*lambda), -1.0*std::sin(tap_idx*lambda));
             }
-            _freqs[idx] = lambda;
-            _mag_resp[idx] = 20.0 * std::log10(std::norm(work));
-            _ang_resp[idx] = std::arg(work);
+            out.first[idx] = lambda;
+            out.second[idx] = 20.0 * std::log10(std::norm(work));
         }
+        return out;
     }
+
+    constexpr pointer filter(pointer input, const size_type& M){
+        pointer out = _alloc.allocate(M);
+        for(size_type m = 0; m < M; ++m){
+            value_type work = value_type();
+            for(size_type n = 0; n < _n; ++n){
+                if(m >= n) work += _taps[n] * input[m - n];
+            }
+            out[m] = work;
+        }
+        return out;
+    }
+
+    constexpr iterator begin() noexcept{return iterator(&_taps[0]);}
+    constexpr const_iterator begin() const noexcept{return const_iterator(&_taps[0]);}
+    constexpr const_iterator cbegin() const noexcept{return const_iterator(&_taps[0]);}
+    
+    constexpr iterator end() noexcept{return iterator(&_taps[_n]);}
+    constexpr const_iterator end() const noexcept{return const_iterator(&_taps[_n]);}
+    constexpr const_iterator cend() const noexcept{return const_iterator(&_taps[_n]);}
+    
+    constexpr reverse_iterator rbegin() noexcept{return iterator(&_taps[_n - 1]);}
+    constexpr const_reverse_iterator rbegin() const noexcept{return const_reverse_iterator(&_taps[_n - 1]);}
+    constexpr const_reverse_iterator crbegin() const noexcept{return const_reverse_iterator(&_taps[_n - 1]);}
+    
+    constexpr reverse_iterator rend() noexcept{return iterator(&_taps[-1]);}
+    constexpr const_reverse_iterator rend() const noexcept{return const_reverse_iterator(&_taps[-1]);}
+    constexpr const_reverse_iterator crend() const noexcept{return const_reverse_iterator(&_taps[-1]);}
+    
 };
-
-
-
-
-
-// /**
-//  * @brief A filter class which holds its own taps. Automatically updates its type depending on which kind of filter was designed.
-//  * Currently has root-raised cosine, raised cosine, and pole zero filters. All data is double precision.
-//  * 
-//  * Approach was based on "Digital Filter Designer's Handbook With C++ Algorithms" by Rorabaugh.
-//  */
-// class fir_filter{
-// public:
-// private:
-//     size_t _num_taps;
-//     double* _taps;
-//     filter_type _type;
-//     std::allocator<double> _alloc;
-// public:
-//     constexpr fir_filter(): _num_taps(0), _taps(nullptr){}
-
-//     constexpr size_t getNumTaps() const{return _num_taps;}
-//     constexpr double* getTaps() const{return _taps;}
-//     constexpr filter_type getType() const{return _type;}
-
-//     /**
-//      * @brief Designs the filter for a root-raised cosine filter.
-//      * @param sps The samples per symbol of the filter.
-//      * @param beta The roll-off factor.
-//      * @param span The filter span in symbols.
-//      */
-//     constexpr void design_rrc(const size_t& sps, const double& beta, const size_t& span){
-//         if(sps < 1) throw std::logic_error("Samples per symbol cannot be less than 1");
-//         if(span <= 0) throw std::logic_error("Span must be greater than 0");
-//         if(beta <= 0 || beta > 1) throw std::logic_error("Beta must be in range (0, 1]");
-
-//         _type = filter_type::RRC;
-//         double PI = std::numbers::pi_v<double>;
-//         double eps = 1e-5;
-//         size_t n = 2*span*sps + 1;
-//         _num_taps = n;
-//         _taps = std::allocator_traits<std::allocator<double>>::allocate(_alloc, n);
-
-//         for(size_t i = 0; i < n; ++i){
-//             double t = static_cast<double>(i)/static_cast<double>(sps) - static_cast<double>(span);
-//             if(std::fabs(t) < eps){
-//                 _taps[i] = 1.0 + beta*4.0/PI - beta;
-//             } else if(std::fabs(t) < 1.0/4.0/beta + eps && std::fabs(t) > 1.0/4.0/beta - eps){
-//                 double a1 = (1.0 + 2.0/PI) * std::sin(PI/4.0/beta);
-//                 double a2 = (1.0 - 2.0/PI) * std::sin(PI/4.0/beta);
-//                 _taps[i] = beta/std::sqrt(2.0)*(a1 + a2);
-//             } else{
-//                 double a1 = std::sin(PI*t*(1.0 - beta));
-//                 double a2 = 4.0*beta*t*std::cos(PI*t*(1.0 + beta));
-//                 double a3 = PI*t*(1.0 - 16.0*std::pow(beta, 2.0)*std::pow(t, 2.0));
-//                 _taps[i] = (a1 + a2)/a3;
-//             }
-//         }
-//         double tp = std::sqrtl(std::accumulate(_taps, _taps + n, 0.0));
-//         for(size_t i = 0; i < n; ++i){
-//             _taps[i] = _taps[i]/tp;
-//         }
-//     }
-
-//     constexpr void design_rc(const size_t& sps, const double& beta, const size_t& span){
-//         if(sps < 1) throw std::logic_error("Samples per symbol cannot be less than 1");
-//         if(span <= 0) throw std::logic_error("Span must be greater than 0");
-//         if(beta <= 0 || beta > 1) throw std::logic_error("Beta must be in range (0, 1]");
-
-//         _type = filter_type::RC;
-//         double PI = std::numbers::pi_v<double>;
-//         double eps = 1e-5;
-//         size_t n = 2*span*sps + 1;
-//         _num_taps = n;
-//         _taps = std::allocator_traits<std::allocator<double>>::allocate(_alloc, n);
-
-//         for(size_t i = 0; i < n; ++i){
-//             double t = static_cast<double>(i)/static_cast<double>(sps) - static_cast<double>(span);
-//             if(std::abs(t) < 1.0/2.0/beta + eps && std::abs(t) > 1.0/2.0/beta - eps){
-//                 _taps[i] = beta/2.0 * std::sin(PI/2.0/beta);
-//             } else if(std::abs(t) < eps){
-//                 _taps[i] = 1;
-//             } else{
-//                 double a1 = std::cos(PI*beta*t)/(1 - std::pow(2*beta*t, 2));
-//                 _taps[i] = a1 * std::sin(PI*t)/PI/t;
-//             }
-//         }
-
-//         double tp = std::sqrtl(std::accumulate(_taps, _taps + n, 0.0));
-//         for(size_t i = 0; i < n; ++i){
-//             _taps[i] = _taps[i]/tp;
-//         }
-
-//     }
-
-//     constexpr void butterworth(const size_t){
-
-//     }
-// };
 #endif
