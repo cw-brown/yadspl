@@ -25,6 +25,8 @@ void key_call(GLFWwindow* window, int key, int, int action, int){
 #define DO_WINDOW true
 
 int main(){
+
+
     if(DO_WINDOW){
     GLFWwindow* window = glfw_makeNewWindow(1920, 1080, "Yet Another DSP Library", true, true, true);
     ImPlot::CreateContext();
@@ -59,7 +61,6 @@ int main(){
             static int order = 21;
             static float fc = 1.0;
             windowed_lowpass.design(order, fc);
-            windowed_lowpass.synthesize();
             auto resp = windowed_lowpass.response(eval_points);
             ImGui::SliderInt("Order", &order, 2, 251);
             ImGui::SliderFloat("Cutoff Frequency", &fc, 0.0, 3.14159);
