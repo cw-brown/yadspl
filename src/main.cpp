@@ -15,6 +15,7 @@
 #include "fir_filter.hpp"
 #include "polynomial.hpp"
 #include "noise.hpp"
+#include "yadpsl_math.hpp"
 
 void key_call(GLFWwindow* window, int key, int, int action, int){
     if(key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
@@ -32,10 +33,14 @@ int main(){
     size_t eval_points = 5000;
 
     static noise<double> gauss;
-    double* signal = gauss.randomSignal(eval_points);
+    // double* signal = gauss.randomSignal(eval_points);
+    double* signal = new double[eval_points];
     double* x = new double[eval_points];
     for(size_t i = 0; i < eval_points; ++i){
         x[i] = i;
+        if(i >= 2000 && i <= 3000){
+            signal[i] = 1.0;
+        } else signal[i] = 0.0;
     }
 
 
@@ -50,7 +55,7 @@ int main(){
         ImGui::Begin("Plottings", (bool*)true, topbarflags);
         ImGui::BeginTabBar("Main Tabs");
         if(ImGui::BeginTabItem("Testing")){
-            static fir_filter<double, filter_type::Lowpass_Ideal, window_type::Hamming> windowed_lowpass;
+            static fir_filter<double, fir_type::Lowpass_Ideal, window_type::Hamming> windowed_lowpass;
             static int order = 21;
             static float fc = 1.0;
             windowed_lowpass.design(order, fc);
@@ -78,7 +83,7 @@ int main(){
             ImGui::EndTabItem();
         }
         if(ImGui::BeginTabItem("Filtered Sample")){
-            static fir_filter<double, filter_type::Lowpass_Ideal, window_type::Hamming> lowpass;
+            static fir_filter<double, fir_type::Lowpass_Ideal> lowpass;
             static int order = 51;
             static float fc = 1.5;
             lowpass.design(order, fc);
@@ -91,8 +96,8 @@ int main(){
             }
             ImGui::EndTabItem();
         }
-        if(ImGui::BeginTabItem("Highpass Filter")){
-            
+        if(ImGui::BeginTabItem("DFT Of Signal")){
+
             ImGui::EndTabItem();
         }
         if(ImGui::BeginTabItem("Bandpass Filter")){

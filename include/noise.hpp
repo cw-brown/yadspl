@@ -1,3 +1,10 @@
+/**
+ * @file noise.hpp
+ * @author cw-brown (https://github.com/cw-brown)
+ * @brief Noise class for generating random signals, or adding different noise types to a signal.
+ * @version 0.1
+ * @date 2025-06-18
+ */
 #ifndef NOISE_H
 #define NOISE_H
 

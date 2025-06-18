@@ -64,11 +64,3 @@ void glfw_frame(){
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
 }
-
-double AWGN(const double& N0, const double& bandwidth){
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    double _sigma = std::sqrt(N0*bandwidth);
-    std::normal_distribution d(1.0, _sigma);
-    return d(gen);
-}

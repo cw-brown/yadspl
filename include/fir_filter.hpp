@@ -1,3 +1,10 @@
+/**
+ * @file fir_filter.hpp
+ * @author cw-brown (https://github.com/cw-brown)
+ * @brief FIR filter class with windowing. Is designed to work on a specified floating point type.
+ * @version 0.1
+ * @date 2025-06-18
+ */
 #ifndef FIR_FILTER_H
 #define FIR_FILTER_H
 
@@ -12,7 +19,7 @@
 
 #include "basic_iterators.hpp"
 
-enum class filter_type{
+enum class fir_type{
     /* Basic Root Raised Cosine */
     Root_Raised_Cosine,
     /* Ideal lowpass filter based on the Fourier series method */
@@ -52,7 +59,7 @@ enum class window_type{
  * 
  * Approach was based on "Digital Filter Designer's Handbook With C++ Algorithms" by Rorabaugh.
  */
-template<class __T, filter_type __F, window_type __W = window_type::None>
+template<class __T, fir_type __F, window_type __W = window_type::None>
 requires std::is_floating_point_v<__T>
 class fir_filter{
 public:
@@ -100,7 +107,7 @@ public:
     constexpr pointer getTaps() const noexcept{return _taps;}
 
     constexpr void design(const size_type& sps, const value_type& beta, const size_type& span) 
-    requires(__F == filter_type::Root_Raised_Cosine){
+    requires(__F == fir_type::Root_Raised_Cosine){
         if(sps < 1.0) throw std::logic_error("Samples per symbol cannot be less than 1");
         if(span <= 0.0) throw std::logic_error("Span must be greater than 0 symbols");
         if(beta <= 0.0 || beta > 1.0) throw std::logic_error("Beta must be in range (0, 1]");
@@ -131,7 +138,7 @@ public:
     }
 
     constexpr void design(const size_type& order, const value_type& fc)
-    requires(__F == filter_type::Lowpass_Ideal){
+    requires(__F == fir_type::Lowpass_Ideal){
         _taps = _alloc.allocate(order);
         _n = order;
         difference_type n_max = order % 2 ? (order - 1)/2 : order/2;
@@ -144,7 +151,7 @@ public:
     }
 
     constexpr void design(const size_type& order, const value_type& fc)
-    requires(__F == filter_type::Highpass_Ideal){
+    requires(__F == fir_type::Highpass_Ideal){
         _taps = _alloc.allocate(order);
         _n = order;
         difference_type n_max = order % 2 ? (order - 1)/2 : order/2;
@@ -157,7 +164,7 @@ public:
     }
 
     constexpr void design(const size_type& order, const value_type& fc1, const value_type& fc2)
-    requires(__F == filter_type::Bandpass_Ideal){
+    requires(__F == fir_type::Bandpass_Ideal){
         _taps = _alloc.allocate(order);
         _n = order;
         difference_type n_max = order % 2 ? (order - 1)/2 : order/2;
@@ -170,7 +177,7 @@ public:
     }
 
     constexpr void design(const size_type& order, const value_type& fc1, const value_type& fc2)
-    requires(__F == filter_type::Bandstop_Ideal){
+    requires(__F == fir_type::Bandstop_Ideal){
         _taps = _alloc.allocate(order);
         _n = order;
         difference_type n_max = order % 2 ? (order - 1)/2 : order/2;
@@ -183,7 +190,7 @@ public:
     }
 
     constexpr void design(const size_type& order, const pointer samples)
-    requires(__F == filter_type::Frequency_Sampled){
+    requires(__F == fir_type::Frequency_Sampled){
         _n = order;
         _taps = _alloc.allocate(_n);
         size_type M = (_n - 1.0)/2.0;

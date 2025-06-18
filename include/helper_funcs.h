@@ -1,3 +1,10 @@
+/**
+ * @file helper_funcs.h
+ * @author cw-brown (https://github.com/cw-brown)
+ * @brief Helper function file for certain commonly used ideas. Mostly meant for ImGui stuff.
+ * @version 0.1
+ * @date 2025-06-18 
+ */
 #ifndef HELPERS_H
 #define HELPERS_H
 
@@ -17,12 +24,4 @@ void glfw_cleanup(GLFWwindow*);
 void glfw_render(GLFWwindow*);
 
 void glfw_frame();
-
-/**
- * @brief Generate additive white guassian noise.
- * @param N0 The power of the noise relative to the input signal.
- * @return double 
- */
-double AWGN(const double& N0, const double& bandwidth);
-
 #endif

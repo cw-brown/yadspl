@@ -1,3 +1,10 @@
+/**
+ * @file polynomial.hpp
+ * @author cw-brown (https://github.com/cw-brown)
+ * @brief Generic polynomial container with math functions.
+ * @version 0.1
+ * @date 2025-06-18
+ */
 #ifndef POLY_H
 #define POLY_H
 
