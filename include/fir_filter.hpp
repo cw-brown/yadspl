@@ -301,7 +301,7 @@ public:
     }
 
     constexpr pointer filter(pointer input, const size_type& M){
-        pointer out = new value_type[_n];
+        pointer out = new value_type[M];
         for(size_type m = 0; m < M; ++m){
             value_type work = value_type();
             for(size_type n = 0; n < _n; ++n){
@@ -327,6 +327,5 @@ public:
     constexpr reverse_iterator rend() noexcept{return iterator(&_taps[-1]);}
     constexpr const_reverse_iterator rend() const noexcept{return const_reverse_iterator(&_taps[-1]);}
     constexpr const_reverse_iterator crend() const noexcept{return const_reverse_iterator(&_taps[-1]);}
-    
 };
 #endif

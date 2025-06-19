@@ -13,6 +13,7 @@
 
 #include "helper_funcs.h"
 #include "fir_filter.hpp"
+#include "iir_filter.hpp"
 #include "polynomial.hpp"
 #include "noise.hpp"
 #include "yadpsl_math.hpp"
@@ -22,29 +23,27 @@ void key_call(GLFWwindow* window, int key, int, int action, int){
         glfwSetWindowShouldClose(window, GLFW_TRUE);
 }
 
-#define DO_WINDOW true
+#define DO_WINDOW false
 
 int main(){
+    using namespace std::literals::complex_literals;
+    complex_polynomial<double> b = {1.0 + 1i, 2.0 - 1i};
+    complex_polynomial<double> c = {3.0 - 3i};
+
+    complex_polynomial<double> a(4);
+    a.fill(2.0 + 2.0i);
+    std::cout<<a.front();
+
+    std::cout<<"Order: "<<a.order()<<"\n";
+    for(auto&& v : a){
+        std::cout<<v<<" ";
+    }
 
 
     if(DO_WINDOW){
     GLFWwindow* window = glfw_makeNewWindow(1920, 1080, "Yet Another DSP Library", true, true, true);
     ImPlot::CreateContext();
     glfwSetKeyCallback(window, key_call);
-
-    size_t eval_points = 5000;
-
-    static noise<double> gauss;
-    // double* signal = gauss.randomSignal(eval_points);
-    double* signal = new double[eval_points];
-    double* x = new double[eval_points];
-    for(size_t i = 0; i < eval_points; ++i){
-        x[i] = i;
-        if(i >= 2000 && i <= 3000){
-            signal[i] = 1.0;
-        } else signal[i] = 0.0;
-    }
-
 
     while(!glfwWindowShouldClose(window)){
         glfwPollEvents();
@@ -54,59 +53,9 @@ int main(){
         ImGui::SetNextWindowSize(ImVec2(ImGui::GetIO().DisplaySize.x, ImGui::GetIO().DisplaySize.y));
         ImGuiWindowFlags topbarflags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoCollapse;
 
-        ImGui::Begin("Plottings", (bool*)true, topbarflags);
+        ImGui::Begin("Plottings", nullptr, topbarflags);
         ImGui::BeginTabBar("Main Tabs");
-        if(ImGui::BeginTabItem("Testing")){
-            static fir_filter<double, fir_type::Lowpass_Ideal, window_type::Hamming> windowed_lowpass;
-            static int order = 21;
-            static float fc = 1.0;
-            windowed_lowpass.design(order, fc);
-            auto resp = windowed_lowpass.response(eval_points);
-            ImGui::SliderInt("Order", &order, 2, 251);
-            ImGui::SliderFloat("Cutoff Frequency", &fc, 0.0, 3.14159);
-            if(ImPlot::BeginPlot("Impulse Response")){
-                ImPlot::SetupAxes("Sample Number", "Amplitude", ImPlotAxisFlags_AutoFit, ImPlotAxisFlags_AutoFit);
-                ImPlot::PlotBars("Windowed Lowpass", windowed_lowpass.getTaps(), windowed_lowpass.getNumTaps());
-                ImPlot::EndPlot();
-            } if(ImPlot::BeginPlot("Frequency Response")){
-                ImPlot::SetupAxes("Frequency (rad/s)", "Magnitude (dB)", ImPlotAxisFlags_AutoFit, 0);
-                ImPlot::SetupAxisLimits(ImAxis_Y1, -80, 10);
-                ImPlot::PlotLine("Windowed Lowpass", resp.first, resp.second, eval_points);
-                ImPlot::EndPlot();
-            }
-            ImGui::EndTabItem();
-        }
-        if(ImGui::BeginTabItem("Noise Sample")){
-            if(ImPlot::BeginPlot("Noise")){
-                ImPlot::PlotLine("Sample", x, signal, eval_points);
-                ImPlot::EndPlot();
-            }
-            ImGui::EndTabItem();
-        }
-        if(ImGui::BeginTabItem("Filtered Sample")){
-            static fir_filter<double, fir_type::Lowpass_Ideal> lowpass;
-            static int order = 51;
-            static float fc = 1.5;
-            lowpass.design(order, fc);
-            lowpass.synthesize();
-            ImGui::SliderInt("Filter Order", &order, 3, 251);
-            ImGui::SliderFloat("Cutoff Frequency", &fc, 0.0, 3.141592);
-            if(ImPlot::BeginPlot("Filtered")){
-                ImPlot::PlotLine("Sample", x, lowpass.filter(signal, eval_points), eval_points);
-                ImPlot::EndPlot();
-            }
-            ImGui::EndTabItem();
-        }
-        if(ImGui::BeginTabItem("DFT Of Signal")){
-
-            ImGui::EndTabItem();
-        }
-        if(ImGui::BeginTabItem("Bandpass Filter")){
-
-            ImGui::EndTabItem();
-        }
-        if(ImGui::BeginTabItem("Bandstop Filter")){
-            
+        if(ImGui::BeginTabItem("Test Feature")){
             ImGui::EndTabItem();
         }
         ImGui::EndTabBar();
