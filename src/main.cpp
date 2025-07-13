@@ -28,11 +28,6 @@ void key_call(GLFWwindow* window, int key, int, int action, int){
 #define DO_WINDOW true
 
 int main(){
-    filter::iir::biquad a;
-    // first order butterworth bilinear transform, fs = 5000
-    double T = 1/5000;
-    double PI = std::numbers::pi;
-
     if(DO_WINDOW){
     GLFWwindow* window = glfw_makeNewWindow(1920, 1080, "Yet Another DSP Library", true, true, true);
     ImPlot::CreateContext();
@@ -48,12 +43,6 @@ int main(){
         ImGui::Begin("Plottings", nullptr, topbarflags);
         ImGui::BeginTabBar("Main Tabs");
         if(ImGui::BeginTabItem("Test Feature")){
-            static double fc = 2000;
-            static double fs = 5000;
-            if(ImPlot::BeginPlot("a")){
-                ImPlot::PlotLine("b", resp.frequencies, resp.magnitude, 500);
-                ImPlot::EndPlot();
-            }
             ImGui::EndTabItem();
         }
         ImGui::EndTabBar();
