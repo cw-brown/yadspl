@@ -67,7 +67,7 @@ public:
         _c = new value_type[init.size()];
         std::uninitialized_copy(init.begin(), init.end(), begin());
     }
-    
+
     constexpr void fill(const value_type& constant){std::fill(begin(), end(), constant);}
     constexpr void swap(polynomial& other) noexcept(std::is_nothrow_swappable_v<value_type>){std::swap_ranges(begin(), end(), other.begin());}
 
@@ -230,6 +230,7 @@ public:
     constexpr const_pointer data() const noexcept{return _c;}
 
     constexpr size_type order() const noexcept{return _n;}
+
 
     constexpr iterator begin() noexcept{return iterator(&_c[0]);}
     constexpr const_iterator begin() const noexcept{return const_iterator(&_c[0]);}

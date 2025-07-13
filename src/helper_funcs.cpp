@@ -60,6 +60,7 @@ void glfw_render(GLFWwindow* window){
 }
 
 void glfw_frame(){
+    glfwPollEvents();
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();

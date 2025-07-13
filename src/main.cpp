@@ -12,33 +12,26 @@
 #include "implot.h"
 
 #include "helper_funcs.h"
-#include "fir_filter.hpp"
-#include "iir_filter.hpp"
+// #include "fir_filter.hpp"
+// #include "iir_filter.hpp"
 #include "polynomial.hpp"
 #include "noise.hpp"
 #include "yadpsl_math.hpp"
+
+#include "filter.hpp"
 
 void key_call(GLFWwindow* window, int key, int, int action, int){
     if(key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
         glfwSetWindowShouldClose(window, GLFW_TRUE);
 }
 
-#define DO_WINDOW false
+#define DO_WINDOW true
 
 int main(){
-    using namespace std::literals::complex_literals;
-    complex_polynomial<double> b = {1.0 + 1i, 2.0 - 1i};
-    complex_polynomial<double> c = {3.0 - 3i};
-
-    complex_polynomial<double> a(4);
-    a.fill(2.0 + 2.0i);
-    std::cout<<a.front();
-
-    std::cout<<"Order: "<<a.order()<<"\n";
-    for(auto&& v : a){
-        std::cout<<v<<" ";
-    }
-
+    filter::iir::biquad a;
+    // first order butterworth bilinear transform, fs = 5000
+    double T = 1/5000;
+    double PI = std::numbers::pi;
 
     if(DO_WINDOW){
     GLFWwindow* window = glfw_makeNewWindow(1920, 1080, "Yet Another DSP Library", true, true, true);
@@ -46,7 +39,6 @@ int main(){
     glfwSetKeyCallback(window, key_call);
 
     while(!glfwWindowShouldClose(window)){
-        glfwPollEvents();
         glfw_frame();
 
         ImGui::SetNextWindowPos(ImVec2(0, 0));
@@ -56,6 +48,12 @@ int main(){
         ImGui::Begin("Plottings", nullptr, topbarflags);
         ImGui::BeginTabBar("Main Tabs");
         if(ImGui::BeginTabItem("Test Feature")){
+            static double fc = 2000;
+            static double fs = 5000;
+            if(ImPlot::BeginPlot("a")){
+                ImPlot::PlotLine("b", resp.frequencies, resp.magnitude, 500);
+                ImPlot::EndPlot();
+            }
             ImGui::EndTabItem();
         }
         ImGui::EndTabBar();

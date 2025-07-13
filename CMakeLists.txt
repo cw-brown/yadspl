@@ -10,7 +10,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 if(MSVC)
     add_compile_options(/W4 /permissive-)
 else()
-    add_compile_options(-Wall -Wextra -Wpedantic -O0 -fconcepts-diagnostics-depth=2)
+    add_compile_options(-Wall -Wextra -Wpedantic -Og -fconcepts-diagnostics-depth=2)
 endif()
 
 set(IMGUI_DIR ${CMAKE_SOURCE_DIR}/include/external/imgui)
@@ -28,6 +28,7 @@ pkg_check_modules(GLFW REQUIRED glfw3)
 
 # included libraries and headers
 include_directories(${CMAKE_SOURCE_DIR}/include)
+include_directories(${CMAKE_SOURCE_DIR}/include/yadspl-filter)
 
 # source files
 file(GLOB SOURCES CONFIGURE_DEPENDS src/*.cpp)
