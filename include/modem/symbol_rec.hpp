@@ -248,7 +248,7 @@ public:
         _max_deviation(max_deviation), _deviation(0.0), _damp(0.0), _kp(0.0), _ki(0.0), _error(0.0), _curr(0)
     {
         // Generate the polyphase prototype
-        std::vector<double> prototype = root_nyquist(_n_filters, _n_filters, 1.0/_sps, _filter_bandwidth, 8*_sps*_n_filters);
+        std::vector<double> prototype = root_nyquist(_n_filters, _n_filters, 1.0/sps, _filter_bandwidth, 8*_sps*_n_filters);
         _bank = polyphase_filter_bank(prototype, _n_filters);
 
         // Update internal parameters of the control loop

@@ -20,6 +20,7 @@
 #include "constellations.hpp"
 #include "symbol_rec.hpp"
 #include "ring.hpp"
+// #include "constellations2.hpp"
 
 // #include "filter.hpp"
 
@@ -31,7 +32,7 @@ void key_call(GLFWwindow* window, int key, int, int action, int){
 #define DO_WINDOW true
 
 int main(){
-    constellation_qpsk constel{};
+    constellation_16qam constel{};
 
     symbol_recovery rec(8, 3.141/50.0, 32, 1.5, constel, 0.35);
     auto bank = rec.get_bank();
@@ -40,12 +41,6 @@ int main(){
 
     std::ring<double> realPart(1024);
     std::ring<double> imagPart(1024);
-
-    for(size_t i = 0; i < 1024; ++i){
-        auto point = constel.get_point(sigGen.randomValue(2));
-        realPart.push_back(point.real());
-        imagPart.push_back(point.imag());
-    }
 
     if(DO_WINDOW){
     GLFWwindow* window = glfw_makeNewWindow(1920, 1080, "Yet Another DSP Library", true, true, true);
@@ -62,18 +57,16 @@ int main(){
         ImPlotAxisFlags axisflags = ImPlotAxisFlags_AutoFit;
 
         // Start to make data
-        auto point = constel.get_point(sigGen.randomValue(2));
+        auto point = sigGen.randomConstellationPoint(constel);
         realPart.push_back(point.real());
         imagPart.push_back(point.imag());
-        sigGen.awgn(realPart.begin(), realPart.end(), 0.001);
-        sigGen.awgn(imagPart.begin(), imagPart.end(), 0.001);
+        
 
         ImGui::Begin("Plottings", nullptr, topbarflags);
         ImGui::BeginTabBar("Main Tabs");
         if(ImGui::BeginTabItem("Test Data")){
             if(ImPlot::BeginPlot("Testing Data", ImVec2(-1, 700))){
-                ImPlot::SetupAxis(ImAxis_X1, "Sample", axisflags);
-                ImPlot::SetupAxis(ImAxis_Y1, "Amplitude", axisflags);
+                ImPlot::SetupAxesLimits(-1.5, 1.5, -1.5, 1.5);
                 ImPlot::PlotScatter("Test IQ", realPart.data(), imagPart.data(), realPart.size());
                 ImPlot::EndPlot();
             }

@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <random>
 #include <bitset>
+#include "constellations.hpp"
 
 /**
  * @brief Generic class for generating different types of signals. Intended to work on signals of arithmetic type _T.
@@ -33,7 +34,7 @@ public:
     template<class InputIt>
     requires std::input_iterator<InputIt>
     void awgn(InputIt first, InputIt last, const double& snr){
-        std::normal_distribution<_T> _d(0.0, 1.0);
+        std::normal_distribution<_T> _d(-1.0, 1.0);
         auto wgn = [this, &_d, &snr](_T& x){x += std::sqrt(snr)*_d(_gen);};
         std::for_each(first, last, wgn);
     }
@@ -60,6 +61,12 @@ public:
     int randomValue(const int& M){
         std::uniform_int_distribution<int> dis(0, std::pow(2, M)-1);
         return dis(_gen);
+    }
+
+    std::complex<double> randomConstellationPoint(const constellation& constel){
+        std::normal_distribution<_T> _d(-1.0, 1.0);
+        auto point = constel.get_point(randomValue((constel.get_bps())));
+        return point + std::complex<double>(0.05*_d(_gen), 0.05*_d(_gen));
     }
 
 

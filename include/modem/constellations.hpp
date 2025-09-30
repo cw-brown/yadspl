@@ -39,7 +39,10 @@ public:
         return std::pair<double*, double*>(I, Q);
     }
 
-    // virtual unsigned int decision(const std::complex<double>& sample) = 0;
+    unsigned int decision(const std::complex<double>& sample){
+        throw std::logic_error("Cannot used base constellation");
+        return 0;
+    }
 
     void normalize(normalization norm){
         switch(norm){
@@ -107,9 +110,9 @@ public:
 
     ~constellation_16qam() override{}
 
-    // unsigned int decision(const std::complex<double>& sample) override{
-    //     return 1;
-    // }
+    unsigned int decision(const std::complex<double>& sample){
+        return 1;
+    }
 
 };
 
