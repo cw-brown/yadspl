@@ -29,6 +29,7 @@ pkg_check_modules(GLFW REQUIRED glfw3)
 # included libraries and headers
 include_directories(${CMAKE_SOURCE_DIR}/include)
 include_directories(${CMAKE_SOURCE_DIR}/include/yadspl-filter)
+include_directories(${CMAKE_SOURCE_DIR}/include/modem)
 
 # source files
 file(GLOB SOURCES CONFIGURE_DEPENDS src/*.cpp)
