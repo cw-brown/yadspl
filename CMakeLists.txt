@@ -23,12 +23,15 @@ file(GLOB IMPLOT_SRC ${IMPLOT_DIR}/*.cpp)
 
 find_package(OpenGL REQUIRED)
 
+find_package(FFTW3 REQUIRED)
+
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(GLFW REQUIRED glfw3)
 
 # included libraries and headers
 include_directories(${CMAKE_SOURCE_DIR}/include)
 include_directories(${CMAKE_SOURCE_DIR}/include/yadspl-filter)
+include_directories(${CMAKE_SOURCE_DIR}/include/modem)
 
 # source files
 file(GLOB SOURCES CONFIGURE_DEPENDS src/*.cpp)
