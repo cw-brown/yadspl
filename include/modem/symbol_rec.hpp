@@ -19,13 +19,95 @@
 
 #include "polyphase.hpp"
 
+/**
+ * @brief 
+ * 
+ */
+class carrier_recovery{
+private:
+    size_t _sps; // samples per symbol
+    double _alpha; // input filter roll-off
+    double _bandwidth; // loop bandwidth
+    size_t _n; // prototype filter size
+
+    double _phase;
+    double _freq;
+    double _max_freq;
+    double _min_freq;
+    double _damping;
+    double _alpha;
+    double _beta;
+
+    fir_taps _lower_band;
+    fir_taps _upper_band;
+
+    double sinc(double x){
+        return x == 0.0 ? 1.0 : std::sin(PI * x) / x;
+    }
+
+    void update_filter(){
+        int M = std::round(_n / _sps);
+        double pow = 0.0;
+
+        std::vector<double> baseband;
+        baseband.reserve(_n);
+        const double half = 2.0 / _sps;
+        for(size_t i = 0; i < _n; ++i){
+            const double k = -M + i * half;
+            const double pos = _alpha * k;
+            const double tap = sinc(pos - 0.5) + sinc(pos + 0.5);
+            pow += std::pow(tap, 2.0);
+            baseband.push_back(tap);
+        }
+
+        std::vector<std::complex<double>> _upper(_n);
+        std::vector<std::complex<double>> _lower(_n);
+
+        long int N = (baseband.size() - 1) / 2;
+        for(size_t i = 0; i < _n; ++i){
+            const double tap = baseband[i] / pow;
+            const double k = (static_cast<int>(i) - N) * 0.5 / _sps;
+            size_t idx = _n - i - 1;
+            _lower[idx] = tap * std::exp(-2.0 * PI * (1.0 + _alpha) * k);
+            _upper[idx] = std::conj(_lower[idx - i - 1]);
+        }
+
+    }
+
+    static constexpr double PI = std::numbers::pi;
+public:
+    carrier_recovery(const size_t& sps, const double& roll_off, const double& loop_bw, const size_t& filter_size)
+        : _sps(sps), _alpha(roll_off), _bandwidth(loop_bw), _n(filter_size){
+        // Set up control variables and gains
+        _phase = 0;
+        _freq = 0;
+        _min_freq = -4.0 * PI / _sps;
+        _max_freq = 4.0 * PI / _sps;
+        _damping = std::sqrt(2.0) / 2.0;
+        _alpha = 0.0;
+        _beta = 8.0 * PI * _bandwidth / _sps;
+        update_filter();
+    }
+
+    size_t sps() const{return _sps;}
+    double damp() const{return _damping;}
+    double max_freq() const{return _max_freq;}
+    double min_freq() const{return _min_freq;}
+    double alpha() const{return _alpha;}
+    double beta() const{return _beta;}
+    double phase() const{return _phase;}
+    double frequency() const{return _freq;}
+
+};
+
+
 class symbol_recovery{
 private:
     // *** Storage Parameters ***
     size_t _sps;
     double _bandwidth;
     double _filter_bandwidth;
-    size_t _n_filters;
+    int _n_filters;
     polyphase_filter_bank _bank;
     constellation _constel;
 
@@ -37,7 +119,7 @@ private:
     double _kp; // Proportional gain
     double _ki; // Integral gain
     double _error; // Total error signal
-    size_t _curr; // The current arm of the bank
+    int _curr; // The current arm of the bank
 public:
     /**
      * @brief Symbol recovery will receive an input sample stream and output decoded symbols (bytes) according to a provided constellation.
@@ -57,7 +139,7 @@ public:
         _max_deviation(max_deviation), _deviation(0.0), _damp(0.0), _kp(0.0), _ki(0.0), _error(0.0), _curr(0)
     {
         // Generate the polyphase prototype
-        std::vector<double> prototype = root_nyquist(_n_filters, _n_filters, 1.0/sps, _filter_bandwidth, 8*_sps*_n_filters);
+        std::vector<double> prototype = root_nyquist(_n_filters, _n_filters*_sps, 1.0, _filter_bandwidth, 8*_sps*_n_filters);
         _bank = polyphase_filter_bank(prototype, _n_filters);
 
         // Update internal parameters of the control loop
@@ -119,33 +201,26 @@ public:
      * 
      * @param samples 
      */
-    void operate(std::vector<std::complex<double>> samples){
-        size_t i = 0;
-        size_t j = 0;
-        while(i < samples.size()){
+    std::vector<std::complex<double>> operate(std::vector<std::complex<double>> samples){
+        std::vector<std::complex<double>> output;
+        for(size_t i = 0; i < samples.size(); i+= _sps){
             _curr = std::floor(_phase);
 
-            // Wrap around our filter bank to the proper arm
-
-            auto v = _bank.filter(samples[j], _curr);
-            _phase = _phase + _deviation;
-
-            auto dv = _bank.deriv_filter(samples[j], _curr);
-            double real_err = v.real() * dv.real();
-            double imag_err = v.imag() * dv.imag();
-            _error = (real_err + imag_err) / 2.0;
-
-            for(size_t s = 0; s < _sps; ++s){
-                _deviation += _ki * _error;
-                _phase += _deviation + _kp * _error;
+            if(_curr >= _n_filters){
+                _phase -= _n_filters;
+                _curr %= _n_filters;
+            }
+            while(_curr < 0){
+                _phase += _n_filters;
+                _curr += _n_filters;
             }
 
-            _deviation = 0.5 * (std::abs(_deviation + _max_deviation) - std::abs(_deviation - _max_deviation));
 
-            i++;
-            j += _sps;
+
         }
+        return output;
     }
+
 };
 
 

@@ -23,6 +23,7 @@
 #include "ring.hpp"
 #include "transmitter.hpp"
 #include "polyphase.hpp"
+#include "graphics.hpp"
 // #include "filter.hpp"
 
 #include "fft.hpp"
@@ -36,29 +37,18 @@ void key_call(GLFWwindow* window, int key, int, int action, int){
 #define RFFT_IMPLEMENTATION
 
 int main(){
-    constellation_qpsk QPSK{};
     noise<double> sigGen{};
+    constellation_qpsk constel{};
+    std::vector<double> tx_f = root_nyquist(32, 32, 1.0, 0.35, 11*8*32);
+    polyphase_upsampler arb(8, tx_f, 32);
 
-    std::vector<std::complex<double>> data(1024);
-    std::vector<double> realpart(1024);
-    std::vector<double> imagpart(1024);
-    for(size_t i = 0; i < 1024; ++i){
-        data[i] = QPSK.get_point(sigGen.randomValue(QPSK.get_bps()));
-        realpart[i] = data[i].real();
-        imagpart[i] = data[i].imag();
-    }
+    std::vector<std::complex<double>> iq_data(1024);
+    for(size_t i = 0; i < 1024; ++i) iq_data[i] = constel.get_point(sigGen.randomValue(constel.get_bps()));
 
-    auto v = root_nyquist(32, 32, 1.0, 0.35, 11*32*8);
-    polyphase_upsampler arb(8, v, 32);
+    auto tx_output = arb.filterN(iq_data);
 
-    auto output = arb.filterN(data.data(), 1024);
-
-    fft_transform_radix2(output, false);
-    fft_transform_radix2(data, false);
-
-    std::vector<double> plotData = make_psd(output);
-    auto minData = make_psd(data);
-
+    fft_transform_radix2(tx_output, false);
+    auto h = make_psd(tx_output);
 
     if(DO_WINDOW){
     GLFWwindow* window = glfw_makeNewWindow(1920, 1080, "Yet Another DSP Library", true, true, true);
@@ -76,19 +66,8 @@ int main(){
         ImGui::Begin("Plottings", nullptr, topbarflags);
         ImGui::BeginTabBar("Main Tabs");
         if(ImGui::BeginTabItem("FFT")){
-            if(ImPlot::BeginPlot("FFT Plot 1", ImVec2(-1, 750))){
-                ImPlot::PlotLine("Test Data Filtered", plotData.data(), plotData.size());
-                ImPlot::EndPlot();
-            }
-            if(ImPlot::BeginPlot("FFT Plot 2", ImVec2(-1, 750))){
-                ImPlot::PlotLine("Test Data", minData.data(), minData.size());
-                ImPlot::EndPlot();
-            }
-            ImGui::EndTabItem();
-        }
-        if(ImGui::BeginTabItem("IQ Plots")){
-            if(ImPlot::BeginPlot("IQ", ImVec2(-1, 750))){
-                ImPlot::PlotScatter("QPSK", realpart.data(), imagpart.data(), 1024);
+            if(ImPlot::BeginPlot("FFT Plot 1", ImVec2(-1, 800))){
+                ImPlot::PlotLine("Test Data Filtered", h.data(), h.size());
                 ImPlot::EndPlot();
             }
             ImGui::EndTabItem();

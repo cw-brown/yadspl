@@ -90,7 +90,11 @@ public:
         _curr = (_curr + 1)%_history.size();
         return accum;
     }
-    void update_taps(const std::vector<double>& taps){_taps = taps; _n = taps.size();}
+    void update_taps(const std::vector<double>& taps){
+        _taps.resize(taps.size());
+        _taps = taps; 
+        _n = taps.size();
+    }
 
     void reset(){
         _history.assign(_n, 0.0);
@@ -228,21 +232,10 @@ public:
 
     /**
      * @brief Filter N samples 
-     * 
-     * @tparam inputIt 
-     * @param it Iterator start for the block of samples
-     * @param n Number of samples to filter
      */
-    std::vector<std::complex<double>> filterN(std::complex<double>* samples, size_t n){
+    std::vector<std::complex<double>> filterN(const std::vector<std::complex<double>>& samples){
+        size_t n = samples.size();
         std::vector<std::complex<double>> output(n * _up_rate);
-        
-        // for(size_t i = 0; i < n; ++i){
-        //     while(_curr < _up_rate){
-        //         std::complex<double> x1 = _bank.filter(samples[i])
-        //     }
-        
-        // }
-
         size_t i = 0; 
         size_t j = 0;
         while(i < n){

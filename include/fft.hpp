@@ -125,12 +125,13 @@ std::vector<double> make_psd(std::vector<std::complex<double>> vec){
 	}
 	std::vector<double> halfVecFlip(half);
 	std::reverse_copy(halfVec.begin(), halfVec.end(), halfVecFlip.begin());
+	auto maximum = *std::max_element(halfVec.begin(), halfVec.end());
 
 	for(size_t i = 0; i < half; ++i){
-		output[i] = halfVecFlip[i];
+		output[i] = halfVecFlip[i] - maximum;
 	}
 	for(size_t i = half; i < vec.size(); ++i){
-		output[i] = halfVec[i - half];
+		output[i] = halfVec[i - half] - maximum;
 	}
 	return output;
 }
