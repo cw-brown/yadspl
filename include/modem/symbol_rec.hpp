@@ -23,7 +23,7 @@
  * @brief 
  * 
  */
-class carrier_recovery{
+class frequency_recovery{
 private:
     size_t _sps; // samples per symbol
     double _rolloff; // input filter roll-off
@@ -34,7 +34,6 @@ private:
     double _freq;
     double _max_freq;
     double _min_freq;
-    double _damping;
     double _alpha;
     double _beta;
 
@@ -78,24 +77,20 @@ private:
         _upper_band.update_taps(_upper);
     }
 public:
-    carrier_recovery(const size_t& sps, const double& roll_off, const double& loop_bw, const size_t& filter_size)
+    frequency_recovery(const size_t& sps, const double& roll_off, const double& loop_bw, const size_t& filter_size)
         : _sps(sps), _rolloff(roll_off), _bandwidth(loop_bw), _n(filter_size){
         // Set up control variables and gains
-        _phase = 0;
-        _freq = 0;
+        _phase = 0.0;
+        _freq = 0.0;
         _min_freq = -4.0 * PI / _sps;
         _max_freq = 4.0 * PI / _sps;
-        _damping = std::sqrt(2.0) / 2.0;
-        _alpha = 0.0;
         _beta = 8.0 * PI * _bandwidth / _sps;
         update_filter();
     }
 
     size_t sps() const{return _sps;}
-    double damp() const{return _damping;}
     double max_freq() const{return _max_freq;}
     double min_freq() const{return _min_freq;}
-    double alpha() const{return _alpha;}
     double beta() const{return _beta;}
     double phase() const{return _phase;}
     double frequency() const{return _freq;}
@@ -113,10 +108,10 @@ public:
             std::complex<double> upper = _lower_band.filter1(output[i]);
             std::complex<double> lower = _upper_band.filter1(output[i]);
 
-            double err = std::norm(upper) - std::norm(lower);
+            double err = std::norm(lower) - std::norm(upper);
 
             _freq += _beta * err;
-            _phase += _freq + _alpha * err;
+            _phase += _freq;
 
             if(_phase >= 2.0 * PI) _phase = std::fmod(_phase, 2.0 * PI);
             if(_phase <  -2.0 * PI) _phase = std::fmod(_phase, -2.0 * PI);
@@ -130,7 +125,7 @@ public:
 };
 
 
-class symbol_recovery{
+class phase_recovery{
 private:
     // *** Storage Parameters ***
     size_t _sps;
@@ -161,7 +156,7 @@ public:
      * @param constellation A constellation object that encodes the data
      * @param filter_bandwidth The bandwidth of the matched filter
      */
-    symbol_recovery(const size_t& sps, const double& loop_bandwidth, const size_t& num_filters, 
+    phase_recovery(const size_t& sps, const double& loop_bandwidth, const size_t& num_filters, 
                     const double& max_deviation, const constellation& constellation, const double& filter_bandwidth)
         : _sps(sps), _bandwidth(loop_bandwidth), _filter_bandwidth(filter_bandwidth), 
         _n_filters(num_filters), _constel(constellation), _phase(num_filters/2.0),
@@ -231,22 +226,33 @@ public:
      * @param samples 
      */
     std::vector<std::complex<double>> operate(std::vector<std::complex<double>> samples){
+        // std::vector<std::complex<double>> output(samples.size() / _sps, 0.0);
         std::vector<std::complex<double>> output;
-        for(size_t i = 0; i < samples.size(); i+= _sps){
+        output.reserve(samples.size() / _sps);
+        for(size_t i = 0; i < samples.size(); i += _n_filters){
             _curr = std::floor(_phase);
 
-            if(_curr >= _n_filters){
-                _phase -= _n_filters;
-                _curr %= _n_filters;
-            }
-            while(_curr < 0){
-                _phase += _n_filters;
-                _curr += _n_filters;
-            }
+            if(_curr < 0) _curr = _n_filters - ((_n_filters + std::abs(_curr)) % _n_filters);
+            if(_curr >= _n_filters) _curr = _curr % _n_filters;
 
+            auto v = _bank.filter(samples[i], _curr);
+            _phase += _deviation;
+            // output[i] = v;
+            output.push_back(v);
 
+            auto diff = _bank.deriv_filter(samples[i], _curr);
+            // auto err_r = output[i].real() * diff.real();
+            // auto err_i = output[i].imag() * diff.imag();
+            auto err_r = v.real() * diff.real();
+            auto err_i = v.imag() * diff.imag();
+            _error = (err_r + err_i) / 2.0;
 
+            _deviation += _ki * _error;
+            _phase += _deviation + _kp * _error;
+
+            _deviation = 0.5 * (std::abs(_deviation + _max_deviation) - std::abs(_deviation - _max_deviation));
         }
+
         return output;
     }
 

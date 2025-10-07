@@ -38,48 +38,56 @@ void key_call(GLFWwindow* window, int key, int, int action, int){
 int main(){
     size_t sps = 4;
     noise<double> sigGen{};
-    auto prot = root_nyquist(32, 32, 1.0, 0.35, 8*32*sps);
+    std::vector<double> prot = root_nyquist(32, 32, 1.0, 0.35, 8*32*sps);
     polyphase_upsampler samp(sps, prot, 32);
 
-    constellation_qpsk QPSK{};
+    constellation_bpsk QPSK{};
 
     std::vector<std::complex<double>> data(1024);  
     for(size_t i = 0; i < 1024; ++i){
         data[i] = QPSK.get_point(sigGen.randomValue(QPSK.get_bps()));
     }
 
-    auto c = samp.filterN(data);
-    auto txdat(c);
-    fft_transform_radix2(c, false);
-    std::vector<double> plot = make_psd(c);
+    // Transmitted data, upsampled and filtered
+    std::vector<std::complex<double>> c = samp.filterN(data);
+    std::vector<std::complex<double>> txdat(c);
+    fft_transform(c, false);
 
-    // std::vector<double> real(1024);
-    // std::vector<double> imag(1024);
-    // for(size_t i = 0; i < 1024; ++i){
-    //     real[i] = txdat[i].real();
-    //     imag[i] = txdat[i].imag();
-    // }
 
-    carrier_recovery rec(sps, 0.35, 2.0*3.14/100.0, 55);
+    // FLL loop recovery of transmitted data in frequency
+    // frequency_recovery freq_rec(sps, 0.35, 2.0*3.14/100.0, 64);
+    // std::vector<std::complex<double>> freq_rec_dat = freq_rec.operate(txdat);
+    // std::vector<std::complex<double>> d = freq_rec_dat;
+    // fft_transform(d, false);
 
-    std::vector<std::complex<double>> rxdat = rec.operate(txdat);
-    std::vector<std::complex<double>> d = rxdat;
-    fft_transform_radix2(d, false);
-    std::vector<double> plotrx = make_psd(d, false);
+    auto freq_rec_dat = txdat;
 
-    // std::vector<double> realo(rxdat.size());
-    // std::vector<double> imago(rxdat.size());
-    // for(size_t i = 0; i < rxdat.size(); ++i){
-    //     realo[i] = rxdat[i].real();
-    //     imago[i] = rxdat[i].imag();
-    // }
+    // PLL loop recovery of FLL recovery for phase data
+    phase_recovery phase_rec(sps, 2.0*3.14/100.0, 32, 1.5, QPSK, 0.35);
+    std::cout<<"Kp: "<<phase_rec.get_p_gain()<<"\n";
+    std::cout<<"Ki: "<<phase_rec.get_i_gain()<<"\n";
+    std::vector<std::complex<double>> phase_rec_dat = phase_rec.operate(freq_rec_dat);
+    std::vector<std::complex<double>> e(phase_rec_dat);
+    fft_transform(e, false);
+    std::cout<<"Operation Output Size: "<<phase_rec_dat.size()<<"\n";
 
-    // std::cout<<rxdat.size();
+    // Recover some symbols (maybe)
+    // std::vector<std::complex<double>> recovered_symbs(phase_rec_dat.size());
+    std::vector<double> real_rec(phase_rec_dat.size());
+    std::vector<double> imag_rec(phase_rec_dat.size());
+    for(size_t i = 0; i < phase_rec_dat.size(); ++i){
+        real_rec[i] = phase_rec_dat[i].real();
+        imag_rec[i] = phase_rec_dat[i].imag();
+    }
 
     if(DO_WINDOW){
     GLFWwindow* window = glfw_makeNewWindow(1920, 1080, "Yet Another DSP Library", true, true, true);
     ImPlot::CreateContext();
     glfwSetKeyCallback(window, key_call);
+
+    static std::vector<double> plot = make_psd(c);
+    // static std::vector<double> plotrx = make_psd(d, false);
+    static std::vector<double> plot_phase = make_psd(e);
 
     while(!glfwWindowShouldClose(window)){
         glfw_frame();
@@ -94,32 +102,22 @@ int main(){
         if(ImGui::BeginTabItem("TX Data")){
             if(ImPlot::BeginPlot("TX Data", ImVec2(-1, 750))){
                 ImPlot::PlotLine("TX", plot.data(), plot.size());
-                ImPlot::PlotLine("RX", plotrx.data(), plotrx.size());
-
+                // ImPlot::PlotLine("RX", plotrx.data(), plotrx.size());
                 ImPlot::EndPlot();
             }
-            // if(ImPlot::BeginPlot("RX Data", ImVec2(-1, 750))){
-            //     ImPlot::PlotLine("FFT", plotrx.data(), plotrx.size());
-            //     ImPlot::EndPlot();
-            // }
+            if(ImPlot::BeginPlot("RX Data", ImVec2(-1, 750))){
+                ImPlot::PlotLine("Phase Recovery", plot_phase.data(), plot_phase.size());
+                ImPlot::EndPlot();
+            }
             ImGui::EndTabItem();
         }
-        // if(ImGui::BeginTabItem("TX Data Time")){
-        //     if(ImPlot::BeginPlot("TX", ImVec2(-1, 750))){
-        //         ImPlot::PlotLine("Time Real", real.data(), real.size());
-        //         ImPlot::PlotLine("Time Imag", imag.data(), imag.size());
-        //         ImPlot::EndPlot();
-        //     }
-        //     ImGui::EndTabItem();
-        // }
-        // if(ImGui::BeginTabItem("RX Data Time")){
-        //     if(ImPlot::BeginPlot("RX", ImVec2(-1, 750))){
-        //         ImPlot::PlotLine("Time Real", realo.data(), realo.size());
-        //         ImPlot::PlotLine("Time Imag", imago.data(), imago.size());
-        //         ImPlot::EndPlot();
-        //     }
-        //     ImGui::EndTabItem();
-        // }
+        if(ImGui::BeginTabItem("RX Constellation")){
+            if(ImPlot::BeginPlot("RX", ImVec2(-1, 750))){
+                ImPlot::PlotScatter("BPSK", real_rec.data(), imag_rec.data(), real_rec.size());
+                ImPlot::EndPlot();
+            }
+            ImGui::EndTabItem();
+        }
         ImGui::EndTabBar();
         ImGui::End();
 

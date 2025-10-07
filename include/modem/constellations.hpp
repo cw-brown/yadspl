@@ -39,10 +39,7 @@ public:
         return std::pair<double*, double*>(I, Q);
     }
 
-    unsigned int decision(const std::complex<double>& sample){
-        throw std::logic_error("Cannot used base constellation");
-        return 0;
-    }
+    unsigned int decision(const std::complex<double>& sample);
 
     void normalize(normalization norm){
         switch(norm){
@@ -147,6 +144,10 @@ public:
     }
 
     ~constellation_bpsk(){}
+
+    unsigned int decision(const std::complex<double>& sample){
+        return sample.real() >= 0 ? 1 : 0;
+    }
 };
 
 

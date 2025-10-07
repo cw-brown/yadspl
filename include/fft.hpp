@@ -116,7 +116,7 @@ void fft_transform(std::vector<std::complex<double>>& vec, bool inverse) {
  */
 std::vector<double> make_psd(std::vector<std::complex<double>> vec, bool flip = false){
 	std::vector<double> output(vec.size());
-	size_t half = vec.size()/2;
+	size_t half = std::round(vec.size()/2);
 
 	std::vector<double> halfVec(half);
 
