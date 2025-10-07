@@ -34,21 +34,47 @@ void key_call(GLFWwindow* window, int key, int, int action, int){
 }
 
 #define DO_WINDOW true
-#define RFFT_IMPLEMENTATION
 
 int main(){
+    size_t sps = 4;
     noise<double> sigGen{};
-    constellation_qpsk constel{};
-    std::vector<double> tx_f = root_nyquist(32, 32, 1.0, 0.35, 11*8*32);
-    polyphase_upsampler arb(8, tx_f, 32);
+    auto prot = root_nyquist(32, 32, 1.0, 0.35, 8*32*sps);
+    polyphase_upsampler samp(sps, prot, 32);
 
-    std::vector<std::complex<double>> iq_data(1024);
-    for(size_t i = 0; i < 1024; ++i) iq_data[i] = constel.get_point(sigGen.randomValue(constel.get_bps()));
+    constellation_qpsk QPSK{};
 
-    auto tx_output = arb.filterN(iq_data);
+    std::vector<std::complex<double>> data(1024);  
+    for(size_t i = 0; i < 1024; ++i){
+        data[i] = QPSK.get_point(sigGen.randomValue(QPSK.get_bps()));
+    }
 
-    fft_transform_radix2(tx_output, false);
-    auto h = make_psd(tx_output);
+    auto c = samp.filterN(data);
+    auto txdat(c);
+    fft_transform_radix2(c, false);
+    std::vector<double> plot = make_psd(c);
+
+    std::vector<double> real(1024);
+    std::vector<double> imag(1024);
+    for(size_t i = 0; i < 1024; ++i){
+        real[i] = txdat[i].real();
+        imag[i] = txdat[i].imag();
+    }
+
+    carrier_recovery rec(sps, 0.35, 2.0*3.14/100.0, 55);
+
+    std::vector<std::complex<double>> rxdat = rec.operate(txdat);
+    std::vector<std::complex<double>> d = rxdat;
+    fft_transform_radix2(d, false);
+    std::vector<double> plotrx = make_psd(d, false);
+
+    std::vector<double> realo(rxdat.size());
+    std::vector<double> imago(rxdat.size());
+    for(size_t i = 0; i < rxdat.size(); ++i){
+        realo[i] = rxdat[i].real();
+        imago[i] = rxdat[i].imag();
+    }
+
+    std::cout<<rxdat.size();
 
     if(DO_WINDOW){
     GLFWwindow* window = glfw_makeNewWindow(1920, 1080, "Yet Another DSP Library", true, true, true);
@@ -65,9 +91,29 @@ int main(){
     
         ImGui::Begin("Plottings", nullptr, topbarflags);
         ImGui::BeginTabBar("Main Tabs");
-        if(ImGui::BeginTabItem("FFT")){
-            if(ImPlot::BeginPlot("FFT Plot 1", ImVec2(-1, 800))){
-                ImPlot::PlotLine("Test Data Filtered", h.data(), h.size());
+        if(ImGui::BeginTabItem("TX Data")){
+            if(ImPlot::BeginPlot("TX Data", ImVec2(-1, 750))){
+                ImPlot::PlotLine("FFT", plot.data(), plot.size());
+                ImPlot::EndPlot();
+            }
+            if(ImPlot::BeginPlot("RX Data", ImVec2(-1, 750))){
+                ImPlot::PlotLine("FFT", plotrx.data(), plotrx.size());
+                ImPlot::EndPlot();
+            }
+            ImGui::EndTabItem();
+        }
+        if(ImGui::BeginTabItem("TX Data Time")){
+            if(ImPlot::BeginPlot("TX", ImVec2(-1, 750))){
+                ImPlot::PlotLine("Time Real", real.data(), real.size());
+                ImPlot::PlotLine("Time Imag", imag.data(), imag.size());
+                ImPlot::EndPlot();
+            }
+            ImGui::EndTabItem();
+        }
+        if(ImGui::BeginTabItem("RX Data Time")){
+            if(ImPlot::BeginPlot("RX", ImVec2(-1, 750))){
+                ImPlot::PlotLine("Time Real", realo.data(), realo.size());
+                ImPlot::PlotLine("Time Imag", imago.data(), imago.size());
                 ImPlot::EndPlot();
             }
             ImGui::EndTabItem();

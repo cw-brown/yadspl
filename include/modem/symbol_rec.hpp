@@ -26,7 +26,7 @@
 class carrier_recovery{
 private:
     size_t _sps; // samples per symbol
-    double _alpha; // input filter roll-off
+    double _rolloff; // input filter roll-off
     double _bandwidth; // loop bandwidth
     size_t _n; // prototype filter size
 
@@ -38,46 +38,50 @@ private:
     double _alpha;
     double _beta;
 
-    fir_taps _lower_band;
-    fir_taps _upper_band;
+    complex_taps _lower_band;
+    complex_taps _upper_band;
+
+    static constexpr double PI = std::numbers::pi;
 
     double sinc(double x){
-        return x == 0.0 ? 1.0 : std::sin(PI * x) / x;
+        if(x > -1e-6 && x < 1e-6) return 0.0;
+        else return std::sin(PI * x) / (PI * x);
+        // return x == 0.0 ? 1.0 : (std::sin(PI * x) / (PI * x));
     }
 
     void update_filter(){
         int M = std::round(_n / _sps);
         double pow = 0.0;
 
-        std::vector<double> baseband;
-        baseband.reserve(_n);
+        std::vector<double> baseband(_n);
         const double half = 2.0 / _sps;
         for(size_t i = 0; i < _n; ++i){
             const double k = -M + i * half;
-            const double pos = _alpha * k;
+            const double pos = _rolloff * k;
             const double tap = sinc(pos - 0.5) + sinc(pos + 0.5);
             pow += std::pow(tap, 2.0);
-            baseband.push_back(tap);
+            baseband[i] = tap;
         }
 
         std::vector<std::complex<double>> _upper(_n);
         std::vector<std::complex<double>> _lower(_n);
 
-        long int N = (baseband.size() - 1) / 2;
+        int N = (baseband.size() - 1) / 2;
+        const double invpower = 1.0 / pow;
+        const double inv_twice_sps = 0.5 / _sps;
         for(size_t i = 0; i < _n; ++i){
-            const double tap = baseband[i] / pow;
-            const double k = (static_cast<int>(i) - N) * 0.5 / _sps;
+            const double tap = baseband[i] * invpower;
+            const double k = (static_cast<int>(i) - N) * inv_twice_sps;
             size_t idx = _n - i - 1;
-            _lower[idx] = tap * std::exp(-2.0 * PI * (1.0 + _alpha) * k);
-            _upper[idx] = std::conj(_lower[idx - i - 1]);
+            _lower[idx] = std::polar(tap, -2.0 * PI * (1.0 + _rolloff) * k);
+            _upper[idx] = std::conj(_lower[_n - i - 1]);
         }
-
+        _lower_band.update_taps(_lower);
+        _upper_band.update_taps(_upper);
     }
-
-    static constexpr double PI = std::numbers::pi;
 public:
     carrier_recovery(const size_t& sps, const double& roll_off, const double& loop_bw, const size_t& filter_size)
-        : _sps(sps), _alpha(roll_off), _bandwidth(loop_bw), _n(filter_size){
+        : _sps(sps), _rolloff(roll_off), _bandwidth(loop_bw), _n(filter_size){
         // Set up control variables and gains
         _phase = 0;
         _freq = 0;
@@ -97,6 +101,37 @@ public:
     double beta() const{return _beta;}
     double phase() const{return _phase;}
     double frequency() const{return _freq;}
+
+    complex_taps upper_band() const{return _upper_band;}
+    complex_taps lower_band() const{return _upper_band;}
+
+    std::vector<std::complex<double>> operate(const std::vector<std::complex<double>>& input){
+        size_t n = input.size();
+        std::vector<std::complex<double>> output(n, 0.0);
+        for(size_t i = 0; i < n; ++i){
+            std::complex<double> nco = std::polar(1.0, _phase);
+            output[i] = input[i] * nco;
+
+            std::complex<double> upper = _lower_band.filter1(output[i]);
+            std::complex<double> lower = _upper_band.filter1(output[i]);
+
+            double err = std::norm(lower) - std::norm(upper);
+
+            _freq += _beta * err;
+            _phase += _freq + _alpha * err;
+
+            while(_phase > 2.0 * PI){
+                _phase -= 2.0 * PI;
+            }
+            while(_phase < -2.0 * PI){
+                _phase += 2.0 * PI;
+            }
+
+            _freq = _freq > _max_freq ? _max_freq : _freq;
+            _freq = _freq < _min_freq ? _min_freq : _freq;
+        }
+        return output;
+    }
 
 };
 

@@ -83,17 +83,20 @@ public:
         _history[_curr] = sample;
         size_t idx = _curr;
         for(size_t i = 0; i < _n; ++i){
-            accum += _taps[i]*_history[idx];
-            if(idx == 0) idx = _history.size() - 1;
-            else idx -= 1;
+            accum += _taps[i] * _history[idx];
+            if(idx == 0) idx = _n - 1;
+            else idx--;
         }
-        _curr = (_curr + 1)%_history.size();
+        _curr = (_curr + 1) % _n;
         return accum;
     }
     void update_taps(const std::vector<double>& taps){
         _taps.resize(taps.size());
         _taps = taps; 
         _n = taps.size();
+        _history.clear();
+        _history.reserve(_n);
+        _curr = 0;
     }
 
     void reset(){
@@ -102,6 +105,50 @@ public:
     }
 
     std::vector<double> taps() const{return _taps;}
+    size_t size() const{return _n;}
+};
+
+class complex_taps{
+private:
+    std::vector<std::complex<double>> _taps;
+    size_t _n;
+    std::vector<std::complex<double>> _history;
+    size_t _curr = 0;
+public:
+    complex_taps(){
+        _taps.resize(0); 
+        _n = 0;
+        _history.resize(0);
+        _curr = 0;
+    }
+    complex_taps(const std::vector<std::complex<double>>& taps, const size_t& n): _taps(taps), _n(n), _history(n, 0.0){}
+    std::complex<double> filter1(const std::complex<double>& sample){
+        std::complex<double> accum(0.0, 0.0);
+        _history[_curr] = sample;
+        size_t idx = _curr;
+        for(size_t i = 0; i < _n; ++i){
+            accum += _taps[i] * _history[i];
+            if(idx == 0) idx = _n - 1;
+            else idx--;
+        }
+        _curr = (_curr + 1) % _n;
+        return accum;
+    }
+    void update_taps(const std::vector<std::complex<double>>& taps){
+        _taps.resize(taps.size());
+        _taps = taps; 
+        _n = taps.size();
+        _history.clear();
+        _history.reserve(_n);
+        _curr = 0;
+    }
+
+    void reset(){
+        _history.assign(_n, 0.0);
+        _curr = 0;
+    }
+
+    std::vector<std::complex<double>> taps() const{return _taps;}
     size_t size() const{return _n;}
 };
 
