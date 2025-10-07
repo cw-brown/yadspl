@@ -53,12 +53,12 @@ int main(){
     fft_transform_radix2(c, false);
     std::vector<double> plot = make_psd(c);
 
-    std::vector<double> real(1024);
-    std::vector<double> imag(1024);
-    for(size_t i = 0; i < 1024; ++i){
-        real[i] = txdat[i].real();
-        imag[i] = txdat[i].imag();
-    }
+    // std::vector<double> real(1024);
+    // std::vector<double> imag(1024);
+    // for(size_t i = 0; i < 1024; ++i){
+    //     real[i] = txdat[i].real();
+    //     imag[i] = txdat[i].imag();
+    // }
 
     carrier_recovery rec(sps, 0.35, 2.0*3.14/100.0, 55);
 
@@ -67,14 +67,14 @@ int main(){
     fft_transform_radix2(d, false);
     std::vector<double> plotrx = make_psd(d, false);
 
-    std::vector<double> realo(rxdat.size());
-    std::vector<double> imago(rxdat.size());
-    for(size_t i = 0; i < rxdat.size(); ++i){
-        realo[i] = rxdat[i].real();
-        imago[i] = rxdat[i].imag();
-    }
+    // std::vector<double> realo(rxdat.size());
+    // std::vector<double> imago(rxdat.size());
+    // for(size_t i = 0; i < rxdat.size(); ++i){
+    //     realo[i] = rxdat[i].real();
+    //     imago[i] = rxdat[i].imag();
+    // }
 
-    std::cout<<rxdat.size();
+    // std::cout<<rxdat.size();
 
     if(DO_WINDOW){
     GLFWwindow* window = glfw_makeNewWindow(1920, 1080, "Yet Another DSP Library", true, true, true);
@@ -93,31 +93,33 @@ int main(){
         ImGui::BeginTabBar("Main Tabs");
         if(ImGui::BeginTabItem("TX Data")){
             if(ImPlot::BeginPlot("TX Data", ImVec2(-1, 750))){
-                ImPlot::PlotLine("FFT", plot.data(), plot.size());
+                ImPlot::PlotLine("TX", plot.data(), plot.size());
+                ImPlot::PlotLine("RX", plotrx.data(), plotrx.size());
+
                 ImPlot::EndPlot();
             }
-            if(ImPlot::BeginPlot("RX Data", ImVec2(-1, 750))){
-                ImPlot::PlotLine("FFT", plotrx.data(), plotrx.size());
-                ImPlot::EndPlot();
-            }
+            // if(ImPlot::BeginPlot("RX Data", ImVec2(-1, 750))){
+            //     ImPlot::PlotLine("FFT", plotrx.data(), plotrx.size());
+            //     ImPlot::EndPlot();
+            // }
             ImGui::EndTabItem();
         }
-        if(ImGui::BeginTabItem("TX Data Time")){
-            if(ImPlot::BeginPlot("TX", ImVec2(-1, 750))){
-                ImPlot::PlotLine("Time Real", real.data(), real.size());
-                ImPlot::PlotLine("Time Imag", imag.data(), imag.size());
-                ImPlot::EndPlot();
-            }
-            ImGui::EndTabItem();
-        }
-        if(ImGui::BeginTabItem("RX Data Time")){
-            if(ImPlot::BeginPlot("RX", ImVec2(-1, 750))){
-                ImPlot::PlotLine("Time Real", realo.data(), realo.size());
-                ImPlot::PlotLine("Time Imag", imago.data(), imago.size());
-                ImPlot::EndPlot();
-            }
-            ImGui::EndTabItem();
-        }
+        // if(ImGui::BeginTabItem("TX Data Time")){
+        //     if(ImPlot::BeginPlot("TX", ImVec2(-1, 750))){
+        //         ImPlot::PlotLine("Time Real", real.data(), real.size());
+        //         ImPlot::PlotLine("Time Imag", imag.data(), imag.size());
+        //         ImPlot::EndPlot();
+        //     }
+        //     ImGui::EndTabItem();
+        // }
+        // if(ImGui::BeginTabItem("RX Data Time")){
+        //     if(ImPlot::BeginPlot("RX", ImVec2(-1, 750))){
+        //         ImPlot::PlotLine("Time Real", realo.data(), realo.size());
+        //         ImPlot::PlotLine("Time Imag", imago.data(), imago.size());
+        //         ImPlot::EndPlot();
+        //     }
+        //     ImGui::EndTabItem();
+        // }
         ImGui::EndTabBar();
         ImGui::End();
 

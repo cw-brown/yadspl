@@ -83,7 +83,7 @@ public:
         _history[_curr] = sample;
         size_t idx = _curr;
         for(size_t i = 0; i < _n; ++i){
-            accum += _taps[i] * _history[idx];
+            accum += _taps[idx] * _history[i];
             if(idx == 0) idx = _n - 1;
             else idx--;
         }
@@ -127,7 +127,7 @@ public:
         _history[_curr] = sample;
         size_t idx = _curr;
         for(size_t i = 0; i < _n; ++i){
-            accum += _taps[i] * _history[i];
+            accum += _taps[idx] * _history[i];
             if(idx == 0) idx = _n - 1;
             else idx--;
         }

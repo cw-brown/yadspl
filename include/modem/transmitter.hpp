@@ -22,7 +22,7 @@ private:
 
     std::vector<double> _taps;
 public:
-    constellation_modulator(constellation constellation, const size_t& sps){
+    constellation_modulator(constellation constellation, const size_t& sps): _sps(sps), _constel(constellation){
         
     }
 

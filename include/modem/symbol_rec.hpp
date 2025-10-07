@@ -54,9 +54,8 @@ private:
         double pow = 0.0;
 
         std::vector<double> baseband(_n);
-        const double half = 2.0 / _sps;
         for(size_t i = 0; i < _n; ++i){
-            const double k = -M + i * half;
+            const double k = -M + i * 2.0 / _sps;
             const double pos = _rolloff * k;
             const double tap = sinc(pos - 0.5) + sinc(pos + 0.5);
             pow += std::pow(tap, 2.0);
@@ -67,15 +66,14 @@ private:
         std::vector<std::complex<double>> _lower(_n);
 
         int N = (baseband.size() - 1) / 2;
-        const double invpower = 1.0 / pow;
-        const double inv_twice_sps = 0.5 / _sps;
         for(size_t i = 0; i < _n; ++i){
-            const double tap = baseband[i] * invpower;
-            const double k = (static_cast<int>(i) - N) * inv_twice_sps;
+            const double tap = baseband[i] / pow;
+            const double k = (static_cast<int>(i) - N) * 0.5 / _sps;
             size_t idx = _n - i - 1;
             _lower[idx] = std::polar(tap, -2.0 * PI * (1.0 + _rolloff) * k);
             _upper[idx] = std::conj(_lower[_n - i - 1]);
         }
+        std::reverse(_lower.begin(), _lower.end());
         _lower_band.update_taps(_lower);
         _upper_band.update_taps(_upper);
     }
@@ -115,17 +113,13 @@ public:
             std::complex<double> upper = _lower_band.filter1(output[i]);
             std::complex<double> lower = _upper_band.filter1(output[i]);
 
-            double err = std::norm(lower) - std::norm(upper);
+            double err = std::norm(upper) - std::norm(lower);
 
             _freq += _beta * err;
             _phase += _freq + _alpha * err;
 
-            while(_phase > 2.0 * PI){
-                _phase -= 2.0 * PI;
-            }
-            while(_phase < -2.0 * PI){
-                _phase += 2.0 * PI;
-            }
+            if(_phase >= 2.0 * PI) _phase = std::fmod(_phase, 2.0 * PI);
+            if(_phase <  -2.0 * PI) _phase = std::fmod(_phase, -2.0 * PI);
 
             _freq = _freq > _max_freq ? _max_freq : _freq;
             _freq = _freq < _min_freq ? _min_freq : _freq;
