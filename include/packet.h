@@ -45,12 +45,12 @@ struct Packet {
     /**
      * @brief The sequence number of the current packet
      */
-    uint8_t sequenceNum;
+    uint8_t sequenceNumber;
 
     /** 
      * @brief The data content of this packet
     */
-   bool * data;
+   std::vector<uint8_t> data;
 
    /**
     * @brief Contains ISO-3309 CRC-32 checksum
