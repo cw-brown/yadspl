@@ -2,8 +2,6 @@
 #include "crcinterface.h"
 
 PacketFormer::PacketFormer(
-        std::ring<uint8_t> * input_buffer,
-        std::ring<Packet> * output_buffer,
         uint32_t sender_address,
         uint32_t reciever_address,
         uint8_t data_length) :
@@ -11,51 +9,16 @@ PacketFormer::PacketFormer(
         //outputBuffer(output_buffer),
         senderAddress(sender_address),
         recieverAddress(reciever_address),
-        dataLength(data_length),
-        sequenceNumber(0) {
+        dataLength(data_length) {
 
     // Make crc generator with polynomial for ISO 3309 in reversed format
     crcGenny = crcutil_interface::CRC::Create(0xEDB88320, 0, 32, true, 0, 0, 0, true, NULL);
-
-}
-
-void PacketFormer::formNextPacket() {
-
-    static Packet tempPacket;
-    crcutil_interface::UINT64 tempCRC;
-
-    // Reset packet contents
-    (tempPacket.data).clear();
-    
-    // Data packet type
-    tempPacket.controlCode = 0b0000;
-
-    // Data length
-    tempPacket.dataLength = dataLength;
-
-    // Add sender and reciever addresses
     tempPacket.senderAddress = senderAddress;
     tempPacket.recieverAddress = recieverAddress;
 
-    // Add current packet number
-    tempPacket.sequenceNumber = sequenceNumber;
-
-    // Form data section
-    for(int i = dataLength - 1; i >= 0; i--) {
-
-        (tempPacket.data).push_back(inputBuffer->front());
-        inputBuffer->pop();
-
-    }
-
-    // Generate CRC and store to ERC field
-    crcGenny->Compute(tempPacket.data.data(), tempPacket.dataLength, &tempCRC, NULL);
-    tempPacket.erc = (uint32_t) tempCRC;
-
-    // Push formed packet to output buffer
-    outputBuffer->push(tempPacket);
-
 }
+
+
 
 void PacketFormer::setDataLength(uint8_t data_length) {
 
@@ -63,8 +26,90 @@ void PacketFormer::setDataLength(uint8_t data_length) {
 
 }
 
-void PacketFormer::resetSequenceNumber() {
+Packet PacketFormer::formDataPacket(std::vector<uint8_t> * data, uint8_t sequence_number) {
 
-    sequenceNumber = 0;
+    crcutil_interface::UINT64 tempCRC;
+
+    // Reset packet contents
+    (tempPacket.data).clear();
+
+    // Set packet field(s)
     
+    tempPacket.controlCode = 0b0000;
+
+    tempPacket.dataLength = dataLength;
+
+    tempPacket.sequenceNumber = sequence_number;
+
+    // Form data section
+    for(int i = dataLength - 1; i >= 0; i--) {
+
+        (tempPacket.data).push_back(*data->end());
+        data->pop_back();
+
+    }
+
+    // Generate CRC and store to ERC field
+    crcGenny->Compute(tempPacket.data.data(), tempPacket.dataLength, &tempCRC, NULL);
+    tempPacket.erc = (uint32_t) tempCRC;
+
+    return tempPacket;
+
+}
+
+Packet PacketFormer::formRetransmitPacket(std::vector<uint8_t> * data, uint8_t sequence_num) {
+    
+    // Reset packet contents
+    (tempPacket.data).clear();
+    
+    // Form initial packet with class method
+    tempPacket = formDataPacket(data, sequence_num);
+
+    // Set packet field(s)
+
+    tempPacket.controlCode = 0b0001;
+
+    return tempPacket;
+
+}
+
+Packet PacketFormer::formRetransmitPacket(Packet data_packet) {
+
+    // Set packet field(s)
+    data_packet.controlCode = 0b0001;
+
+    return data_packet;
+
+}
+
+Packet PacketFormer::formBusyStartPacket() {
+
+    // Reset packet contents
+    (tempPacket.data).clear();
+
+    // Set packet field(s)
+    tempPacket.controlCode = 0b0010;
+
+    tempPacket.dataLength = 0;
+
+    tempPacket.sequenceNumber = 0;
+
+    tempPacket.erc = 0;
+
+}
+
+Packet PacketFormer::formBusyEndPacket() {
+
+    // Reset packet contents
+    (tempPacket.data).clear();
+
+    // Set packet field(s)
+    tempPacket.controlCode = 0b0011;
+
+    tempPacket.dataLength = 0;
+
+    tempPacket.sequenceNumber = 0;
+
+    tempPacket.erc = 0;
+
 }
