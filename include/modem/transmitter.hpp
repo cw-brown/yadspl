@@ -18,11 +18,11 @@ class constellation_modulator{
 private:
     size_t _sps;
     double _alpha;
-    constellation _constel;
+    constellation* _constel;
 
     std::vector<double> _taps;
 public:
-    constellation_modulator(constellation constellation, const size_t& sps): _sps(sps), _constel(constellation){
+    constellation_modulator(constellation* constellation, const size_t& sps): _sps(sps), _constel(constellation){
         
     }
 

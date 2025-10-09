@@ -39,7 +39,7 @@ public:
         return std::pair<double*, double*>(I, Q);
     }
 
-    unsigned int decision(const std::complex<double>& sample);
+    virtual unsigned int decision(const std::complex<double>& sample) = 0;
 
     void normalize(normalization norm){
         switch(norm){
@@ -107,8 +107,9 @@ public:
 
     ~constellation_16qam() override{}
 
-    unsigned int decision(const std::complex<double>& sample){
-        return 1;
+    unsigned int decision(const std::complex<double>& sample) override{
+        if(sample.real() > 0) return 0;
+        else return 1;
     }
 
 };
@@ -130,6 +131,10 @@ public:
         normalize(normalization::power);
     }
 
+    unsigned int decision(const std::complex<double>& sample) override{
+        return 2 * (sample.imag() > 0) + (sample.real() > 0);
+    }
+
     ~constellation_qpsk(){}
 };
 
@@ -145,7 +150,7 @@ public:
 
     ~constellation_bpsk(){}
 
-    unsigned int decision(const std::complex<double>& sample){
+    unsigned int decision(const std::complex<double>& sample) override{
         return sample.real() >= 0 ? 1 : 0;
     }
 };

@@ -133,7 +133,6 @@ private:
     double _filter_bandwidth;
     int _n_filters;
     polyphase_filter_bank _bank;
-    constellation _constel;
 
     // *** Loop Parameters ***
     double _phase; // The current phase offset (also the filter number)
@@ -157,9 +156,9 @@ public:
      * @param filter_bandwidth The bandwidth of the matched filter
      */
     phase_recovery(const size_t& sps, const double& loop_bandwidth, const size_t& num_filters, 
-                    const double& max_deviation, const constellation& constellation, const double& filter_bandwidth)
+                    const double& max_deviation, const double& filter_bandwidth)
         : _sps(sps), _bandwidth(loop_bandwidth), _filter_bandwidth(filter_bandwidth), 
-        _n_filters(num_filters), _constel(constellation), _phase(num_filters/2.0),
+        _n_filters(num_filters), _phase(num_filters/2.0),
         _max_deviation(max_deviation), _deviation(0.0), _damp(0.0), _kp(0.0), _ki(0.0), _error(0.0), _curr(0)
     {
         // Generate the polyphase prototype
@@ -203,9 +202,6 @@ public:
     }
     void set_max_deviation(const double& deviation){
         _max_deviation = deviation;
-    }
-    void set_constellation(const constellation& constel){
-        _constel = constel;
     }
 
     void update_filter(){
@@ -255,6 +251,59 @@ public:
 
         return output;
     }
+};
+
+/**
+ * @brief Symbol_recovery is meant for recovering the actual bits encoded by the data
+ * 
+ */
+class symbol_recovery{
+private:
+    constellation* _constel;
+
+    double _bandwidth;
+    double _phase;
+    double _freq;
+    double _min_freq;
+    double _max_freq;
+    double _alpha;
+    double _beta;
+
+    static constexpr double PI = std::numbers::pi;
+public:
+    symbol_recovery(constellation* constel, double loop_bandwidth, double min_freq, double max_freq)
+        : _constel(constel), _bandwidth(loop_bandwidth), _min_freq(min_freq), _max_freq(max_freq){
+        _phase = 0.0;
+        _freq = 0.0;
+        const double damping = std::sqrt(2.0) / 2.0;
+        _alpha = (4.0 * damping * _bandwidth) / (1.0 + 2.0 * damping * _bandwidth + std::pow(_bandwidth, 2.0));
+        _beta = (4.0 * std::pow(_bandwidth, 2.0)) / (1.0 + 2.0 * damping * _bandwidth + std::pow(_bandwidth, 2.0));
+    }
+
+    std::vector<unsigned int> operate(const std::vector<std::complex<double>>& samples){
+        std::vector<unsigned int> output(samples.size());
+        for(size_t i = 0; i < samples.size(); ++i){
+            std::complex<double> nco = std::polar(1.0, _phase);
+            std::complex<double> v = samples[i] * nco;
+
+            unsigned int idx = _constel->decision(v);
+            const double error = -std::arg(samples[i] * std::conj(_constel->get_point(idx)));
+
+            _freq += _beta * error;
+            _phase += _freq + _alpha * error;
+
+            if(_phase >= 2.0 * PI) _phase = std::fmod(_phase, 2.0 * PI);
+            if(_phase <  -2.0 * PI) _phase = std::fmod(_phase, -2.0 * PI);
+
+            _freq = _freq > _max_freq ? _max_freq : _freq;
+            _freq = _freq < _min_freq ? _min_freq : _freq;
+
+            output[i] = idx;
+        }
+        return output;
+    }
+
+
 
 };
 
