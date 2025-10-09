@@ -69,6 +69,11 @@ public:
         return point + std::complex<double>(0.05*_d(_gen), 0.05*_d(_gen));
     }
 
+    double randomDouble(){
+        std::normal_distribution<_T> _d(-1.0, 1.0);
+        return _d(_gen);
+    }
+
 
 };
 #endif

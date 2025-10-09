@@ -37,60 +37,94 @@ void key_call(GLFWwindow* window, int key, int, int action, int){
 
 int main(){
     size_t sps = 4;
-    noise<double> sigGen{};
-    std::vector<double> prot = root_nyquist(32, 32, 1.0, 0.35, 8*32*sps);
-    polyphase_upsampler samp(sps, prot, 32);
+    double filter_bw = 0.35;
+    size_t n_filts = 32;
+    double loop_bw = 2.0*3.1415/100.0;
 
-    constellation_bpsk QPSK{};
+    auto tx_prot = root_nyquist(n_filts, n_filts, 1.0, filter_bw, 8*n_filts*sps);
+    auto rx_prot = root_nyquist(n_filts, n_filts*sps, 1.0, filter_bw, 8*n_filts*sps);
 
-    std::vector<std::complex<double>> data(1024);  
+    static constellation_qpsk constel{};
+    static noise<double> sig_gen{};
+    static polyphase_upsampler resampling_filter(sps, tx_prot, n_filts);
+
+    // Setup a data array for constellation
+    std::vector<std::complex<double>> constellation_data;
+    std::vector<double> real_const;
+    std::vector<double> imag_const;
+
+    constellation_data.reserve(1024);
+    real_const.reserve(1024);
+    imag_const.reserve(1024);
+
     for(size_t i = 0; i < 1024; ++i){
-        data[i] = QPSK.get_point(sigGen.randomValue(QPSK.get_bps()));
+        std::complex<double> point = constel.get_point(sig_gen.randomValue(constel.get_bps()));
+        constellation_data.push_back(point);
+        real_const.push_back(point.real() + 0.01*sig_gen.randomDouble());
+        imag_const.push_back(point.imag() + 0.01*sig_gen.randomDouble());
     }
 
-    // Transmitted data, upsampled and filtered
-    std::vector<std::complex<double>> c = samp.filterN(data);
-    std::vector<std::complex<double>> txdat(c);
-    fft_transform(c, false);
+    // Setup a data array for the filtered symbols
+    std::vector<std::complex<double>> tx_data = resampling_filter.filterN(constellation_data);
+    std::vector<double> real_tx(tx_data.size());
+    std::vector<double> imag_tx(tx_data.size());
+
+    // Spectrum for tx data
+    std::vector<std::complex<double>> tx_data_fft(tx_data);
+    std::vector<double> tx_spectrum(tx_data.size(), 0.0);
+    std::vector<double> spectrum_freqs(tx_spectrum.size());
+
+    // FLL edge recovery
+    static frequency_recovery freq_rec(sps, filter_bw, loop_bw, n_filts);
+
+    std::vector<std::complex<double>> rx_data = freq_rec.operate(tx_data);
+    std::vector<std::complex<double>> rx_data_fft(rx_data);
+    std::vector<double> rx_spectrum(rx_data.size(), 0.0);
 
 
-    // FLL loop recovery of transmitted data in frequency
-    // frequency_recovery freq_rec(sps, 0.35, 2.0*3.14/100.0, 64);
-    // std::vector<std::complex<double>> freq_rec_dat = freq_rec.operate(txdat);
-    // std::vector<std::complex<double>> d = freq_rec_dat;
-    // fft_transform(d, false);
-
-    auto freq_rec_dat = txdat;
-
-    // PLL loop recovery of FLL recovery for phase data
-    phase_recovery phase_rec(sps, 2.0*3.14/100.0, 32, 1.5, QPSK, 0.35);
-    std::cout<<"Kp: "<<phase_rec.get_p_gain()<<"\n";
-    std::cout<<"Ki: "<<phase_rec.get_i_gain()<<"\n";
-    std::vector<std::complex<double>> phase_rec_dat = phase_rec.operate(freq_rec_dat);
-    std::vector<std::complex<double>> e(phase_rec_dat);
-    fft_transform(e, false);
-    std::cout<<"Operation Output Size: "<<phase_rec_dat.size()<<"\n";
-
-    // Recover some symbols (maybe)
-    // std::vector<std::complex<double>> recovered_symbs(phase_rec_dat.size());
-    std::vector<double> real_rec(phase_rec_dat.size());
-    std::vector<double> imag_rec(phase_rec_dat.size());
-    for(size_t i = 0; i < phase_rec_dat.size(); ++i){
-        real_rec[i] = phase_rec_dat[i].real();
-        imag_rec[i] = phase_rec_dat[i].imag();
-    }
+    static bool overlay = false;
+    size_t i = 0;
 
     if(DO_WINDOW){
     GLFWwindow* window = glfw_makeNewWindow(1920, 1080, "Yet Another DSP Library", true, true, true);
     ImPlot::CreateContext();
     glfwSetKeyCallback(window, key_call);
 
-    static std::vector<double> plot = make_psd(c);
-    // static std::vector<double> plotrx = make_psd(d, false);
-    static std::vector<double> plot_phase = make_psd(e);
-
     while(!glfwWindowShouldClose(window)){
         glfw_frame();
+
+        // Add more data for constellation
+        std::complex<double> point = constel.get_point(sig_gen.randomValue(constel.get_bps()));
+        constellation_data.erase(constellation_data.begin());
+        real_const.erase(real_const.begin());
+        imag_const.erase(imag_const.begin());
+        constellation_data.push_back(point);
+        real_const.push_back(point.real() + 0.01*sig_gen.randomDouble());
+        imag_const.push_back(point.imag() + 0.01*sig_gen.randomDouble());
+
+        // Filter the constellation data
+        tx_data = resampling_filter.filterN(constellation_data);
+        for(size_t j = 0; j < tx_data.size(); ++j){
+            real_tx[j] = tx_data[j].real();
+            imag_tx[j] = tx_data[j].imag();
+        }
+
+        if(i % 64 == 0){
+            tx_data_fft = tx_data;
+            fft_transform(tx_data_fft, false);
+            tx_spectrum = make_psd(tx_data_fft);
+
+            rx_data = freq_rec.operate(tx_data);
+            rx_data_fft = rx_data;
+            fft_transform(rx_data_fft, false);
+            rx_spectrum = make_psd(rx_data_fft);
+
+            for(size_t j = 0; j < tx_spectrum.size(); ++j){
+                double half = std::round(tx_spectrum.size() / 2);
+                spectrum_freqs[j] = (static_cast<double>(j) - half)*1e-3;
+            }
+        }
+        i++;
 
         ImGui::SetNextWindowPos(ImVec2(0, 0));
         ImGui::SetNextWindowSize(ImVec2(ImGui::GetIO().DisplaySize.x, ImGui::GetIO().DisplaySize.y));
@@ -100,21 +134,33 @@ int main(){
         ImGui::Begin("Plottings", nullptr, topbarflags);
         ImGui::BeginTabBar("Main Tabs");
         if(ImGui::BeginTabItem("TX Data")){
-            if(ImPlot::BeginPlot("TX Data", ImVec2(-1, 750))){
-                ImPlot::PlotLine("TX", plot.data(), plot.size());
-                // ImPlot::PlotLine("RX", plotrx.data(), plotrx.size());
+            if(ImGui::Button("Overlay Recovery", ImVec2(300, 50))) overlay = !overlay;
+            if(ImPlot::BeginPlot("Spectrum", ImVec2(-1, 750))){
+                ImPlot::SetupAxes("Frequency (kHz)", "Magnitude (dB)");
+                ImPlot::SetupAxisLimits(ImAxis_Y1, -30, 5);
+                ImPlot::PlotLine("TX Spectrum", spectrum_freqs.data(), tx_spectrum.data(), tx_spectrum.size());
+                if(overlay){
+                    ImPlot::PlotLine("RX Spectrum", spectrum_freqs.data(), rx_spectrum.data(), tx_spectrum.size());
+                }
                 ImPlot::EndPlot();
             }
-            if(ImPlot::BeginPlot("RX Data", ImVec2(-1, 750))){
-                ImPlot::PlotLine("Phase Recovery", plot_phase.data(), plot_phase.size());
-                ImPlot::EndPlot();
-            }
-            ImGui::EndTabItem();
-        }
-        if(ImGui::BeginTabItem("RX Constellation")){
-            if(ImPlot::BeginPlot("RX", ImVec2(-1, 750))){
-                ImPlot::PlotScatter("BPSK", real_rec.data(), imag_rec.data(), real_rec.size());
-                ImPlot::EndPlot();
+            if(ImPlot::BeginSubplots("", 1, 2, ImVec2(-1, 750))){
+                if(ImPlot::BeginPlot("Constellation IQ Plot")){
+                    ImPlot::SetupAxesLimits(-1.0, 1.0, -1.0, 1.0);
+                    ImPlot::SetupAxes("In-Phase", "Quadrature");
+                    ImPlot::PlotScatter("Constellation", real_const.data(), imag_const.data(), imag_const.size());
+                    ImPlot::EndPlot();
+                }
+                if(ImPlot::BeginPlot("Transmitted Data")){
+                    ImPlot::SetupAxes("Sample", "Amplitude");
+                    ImPlot::SetupAxesLimits(64, 512, -1.45, 1.45);
+                    ImPlot::SetNextLineStyle(ImVec4(0,0,0,-1), 4.0);
+                    ImPlot::PlotLine("Real", real_tx.data(), 2048);
+                    ImPlot::SetNextLineStyle(ImVec4(0,0,0,-1), 4.0);
+                    ImPlot::PlotLine("Imaginary", imag_tx.data(), 2048);
+                    ImPlot::EndPlot();
+                }
+                ImPlot::EndSubplots();
             }
             ImGui::EndTabItem();
         }
