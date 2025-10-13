@@ -201,8 +201,8 @@ private:
     size_t _taps_per_filter; // taps per polyphase filter arm bank
     size_t _curr; // current bank arm
 
-    eftc<double, std::complex<double>>* _bank;
-    eftc<double, std::complex<double>>* _deriv_bank;
+    eftc<double, out_t>* _bank;
+    eftc<double, out_t>* _deriv_bank;
 
     // out_t* _history;
     // size_t _hist_curr;
@@ -225,9 +225,9 @@ public:
         : _interp(num_filters), _decim(std::floor(_interp / rate)), _n(num_filters)
         , _prot_size(n), _accum(0.0), _rate(rate)
         , _frac_rate(_interp / rate - _decim), _taps_per_filter(std::ceil(_prot_size / _interp))
-        , _curr((_prot_size / 2) % _n) 
-        , _bank(new eftc<double, std::complex<double>>[_n])
-        , _deriv_bank(new eftc<double, std::complex<double>>[_n]){
+        , _curr(std::ceil(_n / 2)) 
+        , _bank(new eftc<double, out_t>[_n])
+        , _deriv_bank(new eftc<double, out_t>[_n]){
         // Create a temporary array containing the prototype padded with zeros
         double* temp = new double[_interp * _taps_per_filter];
         std::uninitialized_default_construct_n(temp, _interp * _taps_per_filter);
@@ -281,9 +281,9 @@ public:
         : _interp(num_filters), _decim(std::floor(_interp / rate)), _n(num_filters)
         , _prot_size(std::distance(start, end)), _accum(0.0), _rate(rate)
         , _frac_rate(_interp / rate - _decim), _taps_per_filter(std::ceil(_prot_size / _interp))
-        , _curr((_prot_size / 2) % _n) 
-        , _bank(new eftc<double, std::complex<double>>[_n])
-        , _deriv_bank(new eftc<double, std::complex<double>>[_n]){
+        , _curr(std::ceil(_n / 2)) 
+        , _bank(new eftc<double, out_t>[_n])
+        , _deriv_bank(new eftc<double, out_t>[_n]){
         // Create a temporary array containing the prototype padded with zeros
         double* temp = new double[_interp * _taps_per_filter];
         std::uninitialized_default_construct_n(temp, _interp * _taps_per_filter);
@@ -337,9 +337,9 @@ public:
         : _interp(num_filters), _decim(std::floor(_interp / rate)), _n(num_filters)
         , _prot_size(std::ranges::distance(range)), _accum(0.0), _rate(rate)
         , _frac_rate(_interp / rate - _decim), _taps_per_filter(std::ceil(_prot_size / _interp))
-        , _curr((_prot_size / 2) % _n) 
-        , _bank(new eftc<double, std::complex<double>>[_n])
-        , _deriv_bank(new eftc<double, std::complex<double>>[_n]){
+        , _curr(std::ceil(_n / 2)) 
+        , _bank(new eftc<double, out_t>[_n])
+        , _deriv_bank(new eftc<double, out_t>[_n]){
         // Create a temporary array containing the prototype padded with zeros
         double* temp = new double[_interp * _taps_per_filter];
         std::uninitialized_default_construct_n(temp, _interp * _taps_per_filter);
@@ -381,8 +381,8 @@ public:
         }
     }
 
-    eftc<double, std::complex<double>>* get_bank() const{return _bank;}
-    eftc<double, std::complex<double>>* get_deriv_bank() const{return _deriv_bank;}
+    eftc<double, out_t>* get_bank() const{return _bank;}
+    eftc<double, out_t>* get_deriv_bank() const{return _deriv_bank;}
     size_t get_interpolation() const{return _interp;}
     size_t get_decimation() const{return _decim;}
     size_t get_num_filters() const{return _n;}
@@ -400,23 +400,9 @@ public:
             _deriv_bank[i].filter(sample);
         }
 
-        bool to_produce = false;
-
-        while(_frac_rate <= 1.0){
-            double t = _frac_rate * _n;
-            size_t idx = static_cast<size_t>(t);
-            double frac = t - idx;
-            if(idx >= _n){
-                idx = _n - 1;
-            }
-            out_t x = _bank[idx].stepback_filter();
-            out_t dx = _deriv_bank[idx].stepback_filter();
-            output = x + frac * dx;
-            to_produce = true;
-            _frac_rate += _rate;
-        }
-        _frac_rate -= 1.0;
-        return to_produce;
+        // while(_curr < _n){
+            
+        // }
     }
 
 };
