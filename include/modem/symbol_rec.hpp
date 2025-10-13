@@ -303,6 +303,29 @@ public:
         return output;
     }
 
+    std::vector<std::complex<double>> operate2(const std::vector<std::complex<double>>& samples){
+        std::vector<std::complex<double>> output(samples.size());
+        for(size_t i = 0; i < samples.size(); ++i){
+            std::complex<double> nco = std::polar(1.0, _phase);
+            std::complex<double> v = samples[i] * nco;
+
+            unsigned int idx = _constel->decision(v);
+            const double error = -std::arg(samples[i] * std::conj(_constel->get_point(idx)));
+
+            _freq += _beta * error;
+            _phase += _freq + _alpha * error;
+
+            if(_phase >= 2.0 * PI) _phase = std::fmod(_phase, 2.0 * PI);
+            if(_phase <  -2.0 * PI) _phase = std::fmod(_phase, -2.0 * PI);
+
+            _freq = _freq > _max_freq ? _max_freq : _freq;
+            _freq = _freq < _min_freq ? _min_freq : _freq;
+
+            output[i] = v;
+        }
+        return output;
+    }
+
 
 
 };

@@ -107,12 +107,13 @@ int main(){
     // Symbol recovery constellation
     static symbol_recovery symb_rec(&constel, loop_bw, -0.25, 0.25);
     std::vector<unsigned int> symb_const = symb_rec.operate(rec_data);
+    std::vector<std::complex<double>> symb_comp_const = symb_rec.operate2(rec_data);
     std::vector<double> symb_real(symb_const.size());
     std::vector<double> symb_imag(symb_const.size());
     for(size_t i = 0; i < symb_const.size(); ++i){
-        auto point = constel.get_point(symb_const[i]);
-        symb_real[i] = point.real();
-        symb_imag[i] = point.imag();
+        // auto point = constel.get_point(symb_const[i]);
+        symb_real[i] = symb_comp_const[i].real();
+        symb_imag[i] = symb_comp_const[i].imag();
     }
 
     static bool overlay = false;
@@ -209,9 +210,9 @@ int main(){
                 imag_rec[j] = rec_data[j].imag();
             }
             for(size_t j = 0; j < symb_const.size(); ++j){
-                auto point = constel.get_point(symb_const[j]);
-                symb_real[j] = point.real();
-                symb_imag[j] = point.imag();
+                // auto point = constel.get_point(symb_const[j]);
+                symb_real[j] = symb_comp_const[j].real();
+                symb_imag[j] = symb_comp_const[j].imag();
             }
             if(ImPlot::BeginPlot("Recovered Spectrum", ImVec2(-1, 750))){
                 ImPlot::SetupAxes("Frequency (kHz)", "Magnitude (dB)");
