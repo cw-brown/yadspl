@@ -24,4 +24,5 @@ void glfw_cleanup(GLFWwindow*);
 void glfw_render(GLFWwindow*);
 
 void glfw_frame();
+void key_call(GLFWwindow* window, int key, int, int action, int);
 #endif

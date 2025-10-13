@@ -7,6 +7,22 @@
 #include <numeric>
 #include <cmath>
 
+std::vector<double> ideal_lowpass(const double& normalized_cutoff, const size_t& order){
+    std::vector<double> output(order, 0.0);
+    static constexpr double PI = std::numbers::pi;
+    long long int n_max = order % 2 ? (order - 1) / 2 : order / 2;
+    if(order % 2)  output[n_max] = normalized_cutoff / PI;
+    for(long long int n = 0; n < n_max; ++n){
+        long long int m = n - n_max;
+        output[n] = std::sin(m * normalized_cutoff) / m / PI;
+        output[order - 1 - n] = output[n];
+    }
+    for(size_t n = 0; n < order; ++n){
+        output[n] *= 0.35875 - 0.48829*std::cos(2.0*PI*n/order) + 0.14128*std::cos(4.0*PI*n/order) - 0.01168*std::cos(6.0*PI*n/order);
+    }
+    return output;
+}
+
 /**
  * @brief Returns the taps for a root nyquist filter.
  * @param gain total gain
