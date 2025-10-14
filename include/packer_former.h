@@ -32,14 +32,15 @@ class PacketFormer {
     const uint32_t recieverAddress;
 
     /**
-    * @brief The current length of the data portion of the packets
-    */
-    uint8_t dataLength;
-
-    /**
      * @brief A pointer to the crc generator
      */
     crcutil_interface::CRC * crcGenny;
+
+    /**
+     * @brief A packet for storing information as output packets are formed
+     */
+    static Packet tempPacket;
+
 
     public:
 
@@ -48,22 +49,18 @@ class PacketFormer {
      */
     PacketFormer(
         uint32_t sender_address,
-        uint32_t reciever_address,
-        uint8_t data_length);
+        uint32_t reciever_address);
 
 
-    /**
-     * @brief Set Data Length
-     */
-    void setDataLength(uint8_t data_length);
+    // Transmitter Packets
 
     /**
-     * @brief Form the next packet
+     * @brief Form a data packet
      * @param data A pointer to the input data buffer
      * @param sequence_number The sequence number of the current packet
      * @return A well formed SCHP5 data packet
      */
-    Packet formDataPacket(std::vector<uint8_t> * data, uint8_t sequence_number);
+    Packet formDataPacket(std::vector<uint8_t> * data, uint8_t sequence_number, uint8_t data_length);
 
     /**
      * @brief Form a retransmitted packet
@@ -72,7 +69,15 @@ class PacketFormer {
      * @return A well formed SCHP5 retransmitted packet
      * 
      */
-    Packet formRetransmitPacket(std::vector<uint8_t> * data, uint8_t sequence_num);
+    Packet formRetransmitPacket(std::vector<uint8_t> * data, uint8_t sequence_num, uint8_t data_length);
+
+    /**
+     * @brief Form a retransmitted packet
+     * @param data_packet A well formed SCHP5 data packet to retransmit
+     * @return A well formed SCHP5 retransmitted packet
+     * 
+     */
+    Packet formRetransmitPacket(Packet data_packet);
 
     /**
      * @brief Form a busy start packet
@@ -125,16 +130,81 @@ class PacketFormer {
     Packet formTransactionTransferPacket(const float center_freq, const uint8_t modulation_type);
 
     /**
-     * @brief Form a transaction dropped packet
-     * @return A well formed SCHP5 transaction dropped packet
+     * @brief Form a transmitter transaction dropped packet
+     * @return A well formed SCHP5 TX transmitter transaction dropped packet
      */
-    Packet formTransactionDroppedPacket();
+    Packet formTxTransactionDroppedPacket();
 
     /**
      * @brief Form a transaction end packet
      * @return A well formed SCHP5 transaction end packet
      */
     Packet formTransactionEndPacket();
+
+    // Reciever Packets
+
+    /**
+     * @brief Form an acknowledge packet
+     * @param error_count The current count of transmission errors
+     * @param sequence_number The sequence number of the packet being acknowledged
+     * @return A well formed SCHP5 acknowledge packet
+     */
+    Packet formAcknowledgePacket(uint16_t error_count, uint8_t sequence_number);
+
+    /**
+     * @brief Form a repeat request packet
+     * @param sequence_number The sequence number of the packet being requested
+     * @return A well formed SCHP5 repeat packet
+     */
+    Packet formRepeatPacket(uint8_t sequence_number);
+
+    /**
+     * @brief Form a busy accept packet
+     * @return A well formed SCHP5 busy accept packet
+     */
+    Packet formBusyAcceptPacket();
+    
+    /**
+     * @brief Form a busy ended packet
+     * @return A well formed SCHP5 busy ended packet
+     */
+    Packet formBusyEndedPacket();
+
+    /**
+     * @brief Form a channel property change acknowledge packet
+     * @return A well formed SCHP5 general channel acknowledge packet
+     */
+    Packet formGeneralChannelAcknowledge();
+
+    /**
+     * @brief Form a transaction start acknowledge packet
+     * @return A well formed SCHP5 transaction start acknowledge packet
+     */
+    Packet formTransactionStartAcknowledge();
+
+    /**
+     * @brief Form a transfer accept packet
+     * @return A well formed SCHP5 transfer accept packet
+     */
+    Packet formTransferAccept();
+
+    /**
+     * @brief Form a tranfer decline packet
+     * @return A well formed SCHP5 transfer decline packet
+     */
+    Packet formTransferDecline();
+
+    /**
+     * @brief Form a reciever transaction dropped packet
+     * @return A well formed SCHP5 RX transaction dropped packet
+     */
+    Packet formRxTransactionDroppedPacket();
+
+    /**
+     * @brief Form a transaction end acknowledge packet
+     * @return A well formed SCHP5 transaction end acknowledge packet
+     */
+    Packet formTransactionEndAcknowledge();
 
 };
 
