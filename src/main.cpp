@@ -35,23 +35,13 @@ int main(){
     size_t sps = 4;
     size_t n_filt = 32;
 
-    auto prototype = root_nyquist(n_filt, n_filt, 1.0, 0.35, sps*n_filt*32);
+    noise<double> sig_gen{};
 
-    resampler<double> arb(sps, prototype.data(), prototype.size(), n_filt);
-    // auto bank = arb.get_bank();
-    // auto deriv = arb.get_deriv_bank();
+    merm modulator(&constellation_qpsk{}, 15, sps, n_filt);
 
-    double fc = 16;
-    double fs = 1024;
-    double del_time = 8;
-    int num = fs/del_time;
-    double* stream = new double[num];
-    double* t = new double[num];
-    for(int i = 0; i < num; ++i){
-        t[i] = i / fs;
-        stream[i] = std::sin(2*3.1415926535*fc*t[i]);
-    }
-
+    
+    
+    
 
 
 
@@ -70,15 +60,14 @@ int main(){
     
         ImGui::Begin("Plottings", nullptr, topbarflags);
         if(ImGui::BeginTabBar("Main Tabs")){
-        if(ImGui::BeginTabItem("Items")){
-            if(ImPlot::BeginPlot("Plot 1", ImVec2(-1, 750))){
-                ImPlot::PlotStems("", t, stream, num);
+        if(ImGui::BeginTabItem("Item 0")){
+            if(ImPlot::BeginPlot("Plot 0", ImVec2(-1, 750))){
+                ImPlot::PlotLine("", y.data(), y.size());
                 ImPlot::EndPlot();
             }
-            if(ImPlot::BeginPlot("Plot 2", ImVec2(-1, 750))){
-                // ImPlot::PlotStems("", upsampled.data(), upsampled.size());
-                ImPlot::EndPlot();
-            }
+            ImGui::EndTabItem();
+        }
+        if(ImGui::BeginTabItem("Items 1")){
             ImGui::EndTabItem();
         }
         if(ImGui::BeginTabItem("Items 2")){
