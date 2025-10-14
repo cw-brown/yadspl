@@ -74,6 +74,16 @@ public:
         return _d(_gen);
     }
 
+    int randomBit(){
+        std::uniform_int_distribution<int> dis(0, 1);
+        return dis(_gen);
+    }
+
+    int randomIntRange(int lower, int upper){
+        std::uniform_int_distribution<int> dis(lower, upper);
+        return dis(_gen);
+    }
+
 
 };
 #endif

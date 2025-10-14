@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <utility>
 
+#include <fftw3.h>
 
 #include "implot.h"
 
@@ -36,13 +37,20 @@ int main(){
     size_t n_filt = 32;
 
     noise<double> sig_gen{};
+    constellation_qpsk QPSK{};
+    merm modulator(&QPSK, 15, sps, n_filt);
+    auto prototype = root_nyquist(n_filt, n_filt, 1.0, 0.35, 8*sps*n_filt);
+    resampler<std::complex<double>> arb(sps, n_filt, prototype);
 
-    merm modulator(&constellation_qpsk{}, 15, sps, n_filt);
+    std::complex<double>* buffer = new std::complex<double>[sps * 256];
+    std::vector<std::complex<double>> data;
+    // fill a buffer completely with modulated symbols
+    for(size_t i = 0; i < 256; ++i){
+        // auto point = QPSK.get_point(sig_gen.randomValue(QPSK.get_bps()));
+        modulator.operate(sig_gen.randomIntRange(0, QPSK.get_size() - 1), buffer + (i * sps));
+    }
 
-    
-    
-    
-
+    double* psd = compute_psd(buffer, 256 * sps);
 
 
 #if DO_WINDOW
@@ -62,7 +70,11 @@ int main(){
         if(ImGui::BeginTabBar("Main Tabs")){
         if(ImGui::BeginTabItem("Item 0")){
             if(ImPlot::BeginPlot("Plot 0", ImVec2(-1, 750))){
-                ImPlot::PlotLine("", y.data(), y.size());
+                // ImPlot::PlotLine("", y.data(), y.size());
+                ImPlot::PlotLine("", psd, sps*256);
+                // ImPlot::PlotStems("", h.data(), h.size());
+                // ImPlot::PlotLine("", dat, 150 * sps);
+                // ImPlot::PlotLine("", out, 150*sps);
                 ImPlot::EndPlot();
             }
             ImGui::EndTabItem();

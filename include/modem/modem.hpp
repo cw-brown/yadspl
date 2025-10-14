@@ -431,6 +431,7 @@ private:
     constellation* _constel; // rectangular constellation to use
     size_t _bits_per_symbol; // number of bits per symbol, determines input buffer length
     size_t _sps; // samples per symbol
+    size_t _n_points; // number of points in the constellation
 
     std::vector<double> _prototype; // prototype filter used
     resampler<std::complex<double>> _pfb; // polyphase resampler to use
@@ -444,7 +445,7 @@ public:
      * @param sps samples per symbol to use
      */
     merm(constellation* constellation, const size_t& buffer_size, size_t sps, size_t num_filters)
-        : _constel(constellation), _bits_per_symbol(_constel->get_bps()), _sps(sps)
+        : _constel(constellation), _bits_per_symbol(_constel->get_bps()), _sps(sps), _n_points(constellation->get_size())
         , _prototype(root_nyquist(num_filters, num_filters, 1.0, 0.35, 8 * _sps * num_filters))
         , _pfb(_sps, num_filters, _prototype){
     }
@@ -462,7 +463,7 @@ public:
      * @return int number of symbols placed into the output buffer
      */
     int operate(unsigned int input, std::complex<double>* output){
-        if(input >= _bits_per_symbol) throw std::out_of_range("MERM operate: input sample is out of range");
+        if(input >= _n_points) throw std::out_of_range("MERM operate: input sample is out of range");
         auto point = _constel->get_point(input);
         int n = _pfb.operate(point, output);
         return n;

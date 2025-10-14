@@ -11,7 +11,11 @@ if(MSVC)
     add_compile_options(/W4 /permissive-)
 else()
     add_compile_options(-Wall -Wextra -Wpedantic -Og -fconcepts-diagnostics-depth=2)
+    # add_link_options(-lfftw3 -lm)
 endif()
+
+find_path(FFTW3_INCLUDE_DIR fftw3.h HINTS "C:/msys64/ucrt64/include")
+find_library(FFTW3_LIBRARY NAMES fftw3 HINTS "C:/msys64/ucrt64/lib")
 
 set(IMGUI_DIR ${CMAKE_SOURCE_DIR}/include/external/imgui)
 file(GLOB IMGUI_SRC ${IMGUI_DIR}/*.cpp
@@ -32,6 +36,7 @@ pkg_check_modules(GLFW REQUIRED glfw3)
 include_directories(${CMAKE_SOURCE_DIR}/include)
 include_directories(${CMAKE_SOURCE_DIR}/include/yadspl-filter)
 include_directories(${CMAKE_SOURCE_DIR}/include/modem)
+include_directories(${FFTW3_INCLUDE_DIR})
 
 # source files
 file(GLOB SOURCES CONFIGURE_DEPENDS src/*.cpp)
@@ -40,4 +45,5 @@ add_executable(${PROJECT_NAME} ${SOURCES} ${IMGUI_SRC} ${IMPLOT_SRC})
 
 target_include_directories(${PROJECT_NAME} PRIVATE ${IMGUI_DIR} ${IMGUI_DIR}/backends ${IMPLOT_DIR} ${GLFW_INCLUDE_DIRS})
 
-target_link_libraries(${PROJECT_NAME} ${GLFW_LIBRARIES} OpenGL::GL)
+target_link_libraries(${PROJECT_NAME} ${GLFW_LIBRARIES} OpenGL::GL ${FFTW3_LIBRARY})
+# target_link_libraries(${PROJECT_NAME} PRIVATE ${FFTW3_LIBRARY})
