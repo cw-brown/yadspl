@@ -11,5 +11,13 @@
                 "CMAKE_INSTALL_PREFIX": "${sourceDir}/out/install/${presetName}"
             }
         }
+    ],
+    "buildPresets": [
+        {
+            "name": "debug-multi",
+            "configurePreset": "debug",
+            "description": "Build with threads",
+            "jobs": 0
+        }
     ]
 }

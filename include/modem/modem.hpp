@@ -424,9 +424,9 @@ public:
 };
 
 /**
- * @brief Memory Efficient Rectangular Modulator (MERM) is a generic modulator for rectangular constellations 
+ * @brief Rectangular modulator is a generic modulator for rectangular constellations 
  */
-class merm{
+class rectangular_modulator{
 private:
     constellation* _constel; // rectangular constellation to use
     size_t _bits_per_symbol; // number of bits per symbol, determines input buffer length
@@ -436,7 +436,7 @@ private:
     std::vector<double> _prototype; // prototype filter used
     resampler<std::complex<double>> _pfb; // polyphase resampler to use
 public:
-    merm() = delete;
+    rectangular_modulator() = delete;
 
     /**
      * @brief Construct a new modulator
@@ -444,7 +444,7 @@ public:
      * @param buffer_size the total number of complex symbols to hold in an internal buffer
      * @param sps samples per symbol to use
      */
-    merm(constellation* constellation, const size_t& buffer_size, size_t sps, size_t num_filters)
+    rectangular_modulator(constellation* constellation, size_t sps, size_t num_filters)
         : _constel(constellation), _bits_per_symbol(_constel->get_bps()), _sps(sps), _n_points(constellation->get_size())
         , _prototype(root_nyquist(num_filters, num_filters, 1.0, 0.35, 8 * _sps * num_filters))
         , _pfb(_sps, num_filters, _prototype){
@@ -467,6 +467,30 @@ public:
         auto point = _constel->get_point(input);
         int n = _pfb.operate(point, output);
         return n;
+    }
+
+};
+
+/**
+ * @brief Firefighter is a full digital demodulation class incorporating frequency, phase, and symbol recovery loops
+ * 
+ */
+class firefighter{
+private:
+    size_t _sps; // samples per symbol of the input complex stream
+    size_t _n_filts; // number of filters to use for matched filtering
+    constellation* _constel; // the constellation to use
+    double _loop_bw; // internal loop bandwidth for control
+
+    static constexpr double PI = std::numbers::pi;
+
+public:
+    firefighter() = delete;
+
+    firefighter(constellation* constel, const size_t& sps, const size_t& n, double loop_bandwidth)
+        : _sps(sps), _n_filts(n), _constel(constel), _loop_bw(loop_bandwidth){
+
+        
     }
 
 };

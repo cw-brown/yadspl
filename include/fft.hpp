@@ -187,6 +187,10 @@ double* compute_psd(std::complex<double>* in, size_t n){
 		output[i] = 10.0 * std::log10(std::abs(fft[half - i]));
 		output[n - i] = output[i];
 	}
+	double max_point = *std::max_element(output, output + n);
+	for(size_t i = 0; i < n; ++i){
+		output[i] -= max_point;
+	}
 	fftw_destroy_plan(plan);
 	fftw_free(fft_in);
 	fftw_free(fft_out);
