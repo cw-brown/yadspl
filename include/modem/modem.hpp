@@ -432,6 +432,7 @@ private:
     size_t _bits_per_symbol; // number of bits per symbol, determines input buffer length
     size_t _sps; // samples per symbol
     size_t _n_points; // number of points in the constellation
+    double _rolloff; // matched filter rolloff alpha
 
     std::vector<double> _prototype; // prototype filter used
     resampler<std::complex<double>> _pfb; // polyphase resampler to use
@@ -444,9 +445,9 @@ public:
      * @param buffer_size the total number of complex symbols to hold in an internal buffer
      * @param sps samples per symbol to use
      */
-    rectangular_modulator(constellation* constellation, size_t sps, size_t num_filters)
-        : _constel(constellation), _bits_per_symbol(_constel->get_bps()), _sps(sps), _n_points(constellation->get_size())
-        , _prototype(root_nyquist(num_filters, num_filters, 1.0, 0.35, 8 * _sps * num_filters))
+    rectangular_modulator(constellation* constellation, size_t sps, size_t num_filters, double rolloff)
+        : _constel(constellation), _bits_per_symbol(_constel->get_bps()), _sps(sps), _n_points(constellation->get_size()), _rolloff(rolloff)
+        , _prototype(root_nyquist(num_filters, num_filters, 1.0, _rolloff, 8 * _sps * num_filters))
         , _pfb(_sps, num_filters, _prototype){
     }
 
@@ -481,16 +482,132 @@ private:
     size_t _n_filts; // number of filters to use for matched filtering
     constellation* _constel; // the constellation to use
     double _loop_bw; // internal loop bandwidth for control
+    double _rolloff; // matched filter rolloff factor alpha
 
     static constexpr double PI = std::numbers::pi;
+
+    /* FREQUENCY RECOVERY VARIABLES */
+    double _fll_phase, _fll_freq;
+    double _fll_max_freq, _fll_min_freq;
+    double _fll_damping;
+    double _fll_alpha, _fll_beta;
+    size_t _fll_size;
+
+    eftc<std::complex<double>, std::complex<double>> _fll_lowerband_filter;
+    eftc<std::complex<double>, std::complex<double>> _fll_upperband_filter;
+    /********************************/
+
+    /**
+     * @brief Update all internal parameters of the recovery because of updated parameters
+     */
+    void update_internals(){
+        update_fll(); // initialize fll internal variables and update fll filters
+
+    }
+
+    double sinc(double x){
+        if(x > -1e-6 && x < 1e-6) return 0.0;
+        else return std::sin(PI * x) / (PI * x);
+    }
 
 public:
     firefighter() = delete;
 
-    firefighter(constellation* constel, const size_t& sps, const size_t& n, double loop_bandwidth)
-        : _sps(sps), _n_filts(n), _constel(constel), _loop_bw(loop_bandwidth){
+    /**
+     * @brief Construct a new recovery object
+     * @param constel the constellation used to modulate the data
+     * @param sps the input stream samples per second
+     * @param n the number of filters to use for matched filter decimation
+     * @param loop_bandwidth the bandwidth of the internal control loop
+     */
+    firefighter(constellation* constel, const size_t& sps, const size_t& n, double loop_bandwidth, double rolloff)
+        : _sps(sps), _n_filts(n), _constel(constel), _loop_bw(loop_bandwidth), _rolloff(rolloff){
+        _fll_size = 55;
+        update_internals();
+    }
 
-        
+    size_t get_sps() const{return _sps;}
+    size_t get_num_filters() const{return _n_filts;}
+    double get_bandwidth() const{return _loop_bw;}
+    constellation* get_constellation() const{return _constel;}
+
+    size_t get_fll_size() const{return _fll_size;}
+    eftc<std::complex<double>, std::complex<double>> get_fll_lower_band() const{return _fll_lowerband_filter;}
+    eftc<std::complex<double>, std::complex<double>> get_fll_upper_band() const{return _fll_upperband_filter;}
+
+    void set_sps(size_t sps){_sps = sps; update_internals();}
+    void set_num_filters(size_t n){_n_filts = n; update_internals();}
+    void set_bandwidth(double bandwidth){_loop_bw = bandwidth; update_internals();}
+    void set_constellation(constellation* constel){_constel = constel; update_internals();}
+
+    void set_fll_size(size_t size){_fll_size = size; update_fll();}
+
+    /**
+     * @brief Operate the symbol recovery on one sample.
+     * @param sample complex sample from input stream
+     * @param output buffer having enough space for the output
+     */
+    void operate(const std::complex<double>& sample, std::complex<double>* output){
+        /* FLL CALCULATIONS */
+        std::complex<double> fll_nco = std::polar(1.0, _fll_phase);
+        *output = sample * fll_nco;
+
+        _fll_lowerband_filter.feed_sample(sample);
+        _fll_upperband_filter.feed_sample(sample);
+        const std::complex<double> out_lower = _fll_lowerband_filter.operate();
+        const std::complex<double> out_upper = _fll_upperband_filter.operate();
+
+        double fll_err = std::norm(out_upper) - std::norm(out_lower);
+        _fll_freq += _fll_beta * fll_err;
+        _fll_phase += _fll_freq + _fll_alpha * fll_err;
+
+        // Wrap around
+        if(_fll_phase > 2.0 * PI) _fll_phase = std::fmod(_fll_phase, 2.0 * PI);
+        if(_fll_phase < -2.0 * PI) _fll_phase = std::fmod(_fll_phase, -2.0 * PI);
+        _fll_freq = _fll_freq > _fll_max_freq ? _fll_max_freq : _fll_freq;
+        _fll_freq = _fll_freq < _fll_min_freq ? _fll_min_freq : _fll_freq;
+
+        /*******************/
+
+    }
+
+private:
+    void update_fll(){
+        _fll_alpha = 0.0;
+        _fll_beta = 2.0 * PI * _loop_bw / _sps;
+        _fll_max_freq = 4.0 * PI / _sps;
+        _fll_min_freq = -4.0 * PI / _sps;
+        _fll_damping = 0.0;
+        _fll_phase = 0.0;
+        _fll_freq = 0.0;
+        set_fll_filter();
+    }
+
+    void set_fll_filter(){
+        long long int M = std::round(_fll_size / _sps);
+        double pow = 0.0;
+
+        double* temp = new double[_fll_size];
+        for(size_t i = 0; i < _fll_size; ++i){
+            const double pos = _rolloff * (-M * i * 2.0 / _sps);
+            double tap = sinc(pos - 0.5) + sinc(pos + 0.5);
+            pow += std::pow(tap, 2.0);
+            temp[i] = tap;
+        }
+
+        std::complex<double>* upper = new std::complex<double>[_fll_size];
+        std::complex<double>* lower = new std::complex<double>[_fll_size];
+        long long int N = (_fll_size - 1) / 2;
+        for(size_t i = 0; i < _fll_size; ++i){
+            double tap = temp[i] / pow;
+            double k = (static_cast<long long int>(i) - N) * 0.5 / _sps;
+            size_t idx = _fll_size - i - 1;
+            lower[idx] = std::polar(tap, -2.0 * PI * (1.0 + _rolloff) * k);
+            upper[idx] = std::conj(lower[_fll_size - i - 1]);
+        }
+        // std::reverse(lower, lower + _fll_size);
+        _fll_lowerband_filter.update_taps(lower, _fll_size);
+        _fll_upperband_filter.update_taps(upper, _fll_size);
     }
 
 };
