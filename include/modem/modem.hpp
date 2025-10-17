@@ -246,8 +246,6 @@ public:
     resampler(const double& rate, const size_t& num_filters, double* taps, size_t n)
         : _rate(rate), _n_filts(num_filters), _tau(0.0), _theta(0.0), _mu(0.0), _curr(std::ceil(_n_filts / 2))
         , _bank(new bank_t[_n_filts]), _deriv_bank(new bank_t[_n_filts]), x(0.0), dx(0.0){
-        _prot_size = n;
-        _taps_per_filter = std::ceil(_prot_size / num_filters);
         update_taps(taps, n);
         _state = INTERP;
     }
@@ -264,7 +262,6 @@ public:
         : _rate(rate), _n_filts(num_filters), _tau(0.0), _theta(0.0), _mu(0.0), _curr(std::ceil(_n_filts / 2))
         , _bank(new bank_t[_n_filts]), _deriv_bank(new bank_t[_n_filts]), x(0.0), dx(0.0){
         _prot_size = std::distance(start, end);
-        _taps_per_filter = std::ceil(_prot_size / num_filters);
         double* temp = new double[_prot_size];
         std::uninitialized_copy(start, end, temp);
         update_taps(temp, _prot_size);
@@ -283,7 +280,6 @@ public:
         : _rate(rate), _n_filts(num_filters), _tau(0.0), _theta(0.0), _mu(0.0), _curr(std::ceil(_n_filts / 2))
         , _bank(new bank_t[_n_filts]), _deriv_bank(new bank_t[_n_filts]), x(0.0), dx(0.0){
         _prot_size = std::ranges::distance(rg);
-        _taps_per_filter = std::ceil(_prot_size / num_filters);
         double* temp = new double[_prot_size];
         std::uninitialized_copy(rg.begin(), rg.end(), temp);
         update_taps(temp, _prot_size);
@@ -296,6 +292,8 @@ public:
      * @param n size of the prototype
      */
     void update_taps(double* taps, const size_t& n){
+        _prot_size = n;
+        _taps_per_filter = std::ceil(_prot_size / _n_filts);
         // Allocate a temporary buffer to store a zero padded array of the prototype
         double* temp = new double[_n_filts * _taps_per_filter];
         std::uninitialized_default_construct_n(temp, _n_filts * _taps_per_filter);
@@ -335,6 +333,7 @@ public:
             }
             _deriv_bank[i].update_taps(temp_sub, _taps_per_filter);
         }
+        reset();
     }
 
     /**
@@ -497,6 +496,10 @@ private:
     eftc<std::complex<double>, std::complex<double>> _fll_upperband_filter;
     /********************************/
 
+    /* PHASE RECOVERY VARIABLES */
+    std::vector<double> _pll_prototype;
+    resampler<std::complex<double>> _pll_pfb;
+
     /**
      * @brief Update all internal parameters of the recovery because of updated parameters
      */
@@ -506,7 +509,7 @@ private:
     }
 
     double sinc(double x){
-        if(x > -1e-6 && x < 1e-6) return 0.0;
+        if(x > -1e-6 && x < 1e-6) return 1.0;
         else return std::sin(PI * x) / (PI * x);
     }
 
@@ -521,7 +524,9 @@ public:
      * @param loop_bandwidth the bandwidth of the internal control loop
      */
     firefighter(constellation* constel, const size_t& sps, const size_t& n, double loop_bandwidth, double rolloff)
-        : _sps(sps), _n_filts(n), _constel(constel), _loop_bw(loop_bandwidth), _rolloff(rolloff){
+        : _sps(sps), _n_filts(n), _constel(constel), _loop_bw(loop_bandwidth), _rolloff(rolloff)
+        , _pll_prototype(root_nyquist(_n_filts, _n_filts * _sps, 1.0, _rolloff, _n_filts))
+        , _pll_pfb(1.0 / _sps, _n_filts, _pll_prototype){
         _fll_size = 55;
         update_internals();
     }
@@ -549,7 +554,7 @@ public:
      */
     void operate(const std::complex<double>& sample, std::complex<double>* output){
         /* FLL CALCULATIONS */
-        std::complex<double> fll_nco = std::polar(1.0, _fll_phase);
+        std::complex<double> fll_nco = std::polar(1.0 / _sps, _fll_phase);
         *output = sample * fll_nco;
 
         _fll_lowerband_filter.feed_sample(sample);
@@ -557,41 +562,51 @@ public:
         const std::complex<double> out_lower = _fll_lowerband_filter.operate();
         const std::complex<double> out_upper = _fll_upperband_filter.operate();
 
-        double fll_err = std::norm(out_upper) - std::norm(out_lower);
+        double fll_err = std::norm(out_lower) - std::norm(out_upper);
+        // double fll_err = (std::norm(out_upper) - std::norm(out_lower)) / (std::norm(out_upper) + std::norm(out_lower) + 1e-6);
         _fll_freq += _fll_beta * fll_err;
         _fll_phase += _fll_freq + _fll_alpha * fll_err;
-
+        
         // Wrap around
         if(_fll_phase > 2.0 * PI) _fll_phase = std::fmod(_fll_phase, 2.0 * PI);
         if(_fll_phase < -2.0 * PI) _fll_phase = std::fmod(_fll_phase, -2.0 * PI);
         _fll_freq = _fll_freq > _fll_max_freq ? _fll_max_freq : _fll_freq;
         _fll_freq = _fll_freq < _fll_min_freq ? _fll_min_freq : _fll_freq;
 
+        _fll_lowerband_filter.increment();
+        _fll_upperband_filter.increment();
+
         /*******************/
 
+        /* PLL CALCULATIONS */
+        // _pll_pfb.operate(sample, output);
+        /*******************/
     }
 
 private:
     void update_fll(){
+        _fll_damping = std::sqrt(2.0) / 2.0;
         _fll_alpha = 0.0;
-        _fll_beta = 2.0 * PI * _loop_bw / _sps;
-        _fll_max_freq = 4.0 * PI / _sps;
-        _fll_min_freq = -4.0 * PI / _sps;
-        _fll_damping = 0.0;
+        // _fll_alpha = 4.0 * _fll_damping * _loop_bw / (1.0 + 2.0 * _fll_damping * _loop_bw + std::pow(_loop_bw, 2.0));
+        // _fll_beta = 4.0 * std::pow(_loop_bw, 2.0) / (1.0 + 2.0 * _fll_damping * _loop_bw + std::pow(_loop_bw, 2.0));
+        _fll_beta = 8.0 * PI * _loop_bw / static_cast<double>(_sps);
+        _fll_max_freq = 4.0 * PI / static_cast<double>(_sps);
+        _fll_min_freq = -4.0 * PI / static_cast<double>(_sps);
         _fll_phase = 0.0;
         _fll_freq = 0.0;
         set_fll_filter();
     }
 
     void set_fll_filter(){
-        long long int M = std::round(_fll_size / _sps);
-        double pow = 0.0;
+        long long int M = std::rint(static_cast<double>(_fll_size) / static_cast<double>(_sps));
+        double power = 0.0;
 
         double* temp = new double[_fll_size];
         for(size_t i = 0; i < _fll_size; ++i){
-            const double pos = _rolloff * (-M * i * 2.0 / _sps);
-            double tap = sinc(pos - 0.5) + sinc(pos + 0.5);
-            pow += std::pow(tap, 2.0);
+            const double k = static_cast<double>(-M) + static_cast<double>(i) * 2.0 / static_cast<double>(_sps);
+            const double pos = _rolloff * k;
+            double tap = sinc(pos + 0.5) + sinc(pos - 0.5);
+            power += std::pow(tap, 2.0);
             temp[i] = tap;
         }
 
@@ -599,13 +614,12 @@ private:
         std::complex<double>* lower = new std::complex<double>[_fll_size];
         long long int N = (_fll_size - 1) / 2;
         for(size_t i = 0; i < _fll_size; ++i){
-            double tap = temp[i] / pow;
-            double k = (static_cast<long long int>(i) - N) * 0.5 / _sps;
+            double tap = temp[i] / power;
+            double k = (static_cast<double>(i) - static_cast<double>(N)) * 0.5 / static_cast<double>(_sps);
             size_t idx = _fll_size - i - 1;
             lower[idx] = std::polar(tap, -2.0 * PI * (1.0 + _rolloff) * k);
-            upper[idx] = std::conj(lower[_fll_size - i - 1]);
+            upper[idx] = std::conj(lower[idx]);
         }
-        // std::reverse(lower, lower + _fll_size);
         _fll_lowerband_filter.update_taps(lower, _fll_size);
         _fll_upperband_filter.update_taps(upper, _fll_size);
     }

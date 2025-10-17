@@ -28,8 +28,30 @@ public:
 
 class channel_model{
 private:
+    double _freq_offset;
+    double _noise_voltage;
     fast_noise _awgn{};
+    std::complex<double> _accum;
 
+    static constexpr double PI = std::numbers::pi;
+public:
+    channel_model(double frequency_offset, double noise_voltage)
+        :_freq_offset(frequency_offset), _noise_voltage(noise_voltage), _accum(1.0){}
+
+    /**
+     * @brief Apply offsets and noise to a single sample
+     * @param sample 
+     */
+    void operate(std::complex<double>* sample){
+        *sample *= _accum;
+        const std::complex<double> w = std::polar(1.0, 2.0 * PI * _freq_offset);
+        std::complex<double> noise = _awgn.noise_voltage(_noise_voltage);
+        _accum *= w;
+        *sample += noise;
+    }
+
+    void set_offset(double frequency_offset){_freq_offset = frequency_offset;}
+    void set_noise(double noise_power){_noise_voltage = noise_power;}
 
 };
 
