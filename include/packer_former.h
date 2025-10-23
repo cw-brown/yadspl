@@ -9,10 +9,8 @@
 # define PACKET_FORMER_H
 
 #include "packet.h"
-#include "ring.hpp"
 #include "crcinterface.h"
 #include <cstdint>
-#include <queue>
 
 /**
  * @brief Forms packets according to the SCHP5 protocol for packet radios
@@ -39,7 +37,7 @@ class PacketFormer {
     /**
      * @brief A packet for storing information as output packets are formed
      */
-    static Packet tempPacket;
+    Packet tempPacket;
 
 
     public:

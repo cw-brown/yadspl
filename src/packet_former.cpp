@@ -112,8 +112,8 @@ Packet PacketFormer::formBusyEndPacket() {
 Packet PacketFormer::formCenterFrequencyPacket(const float center_freq) {
 
     // To hold float temporarily
-    static uint32_t floatConv;
-    static std::vector<uint8_t> floatConvBroken = {0, 0, 0, 0};
+    uint32_t floatConv;
+    std::vector<uint8_t> floatConvBroken = {0, 0, 0, 0};
 
     // Reset packet contents
     (tempPacket.data).clear();
@@ -211,7 +211,7 @@ Packet PacketFormer::formTransactionTransferPacket(const float center_freq, cons
 
 }
 
-Packet PacketFormer::formTransactionDroppedPacket() {
+Packet PacketFormer::formTxTransactionDroppedPacket() {
 
     // Reset packet contents
     (tempPacket.data).clear();
@@ -240,6 +240,191 @@ Packet PacketFormer::formTransactionEndPacket() {
     tempPacket.dataLength = 0;
 
     tempPacket.sequenceNumber = 0;
+
+    tempPacket.erc = 0;
+
+    return tempPacket;
+
+}
+
+// Reciever Packets
+
+Packet PacketFormer::formAcknowledgePacket(uint16_t error_count, uint8_t sequence_number) {
+
+    // Reset packet contents
+    (tempPacket.data).clear();
+
+    // Set packet field(s)
+    tempPacket.controlCode = 0b0000;
+
+    tempPacket.sequenceNumber = sequence_number;
+
+    tempPacket.erc = 0;
+
+    // Error information
+    tempPacket.dataLength = 2;
+    (tempPacket.data).push_back((error_count >> 8) & 0b11111111);
+    (tempPacket.data).push_back((error_count >> 0) & 0b11111111);
+
+    return tempPacket;
+
+}
+
+Packet PacketFormer::formRepeatPacket(uint8_t sequence_number) {
+
+    // Reset packet contents
+    (tempPacket.data).clear();
+
+    // Set packet field(s)
+    tempPacket.controlCode = 0b0001;
+
+    tempPacket.sequenceNumber = sequence_number;
+
+    tempPacket.dataLength = 0;
+
+    tempPacket.erc = 0;
+
+    return tempPacket;
+
+}
+
+Packet PacketFormer::formBusyAcceptPacket() {
+
+    // Reset packet contents
+    (tempPacket.data).clear();
+
+    // Set packet field(s)
+    tempPacket.controlCode = 0b0010;
+
+    tempPacket.sequenceNumber = 0;
+
+    tempPacket.dataLength = 0;
+
+    tempPacket.erc = 0;
+
+    return tempPacket;
+
+}
+
+Packet PacketFormer::formBusyEndedPacket() {
+
+    // Reset packet contents
+    (tempPacket.data).clear();
+
+    // Set packet field(s)
+    tempPacket.controlCode = 0b0011;
+
+    tempPacket.sequenceNumber = 0;
+
+    tempPacket.dataLength = 0;
+
+    tempPacket.erc = 0;
+
+    return tempPacket;
+
+}
+
+Packet PacketFormer::formGeneralChannelAcknowledge() {
+
+    // Reset packet contents
+    (tempPacket.data).clear();
+
+    // Set packet field(s)
+    tempPacket.controlCode = 0b0100;
+
+    tempPacket.sequenceNumber = 0;
+
+    tempPacket.dataLength = 0;
+
+    tempPacket.erc = 0;
+
+    return tempPacket;
+
+}
+
+Packet PacketFormer::formTransactionStartAcknowledge() {
+
+    // Reset packet contents
+    (tempPacket.data).clear();
+
+    // Set packet field(s)
+    tempPacket.controlCode = 0b1000;
+
+    tempPacket.sequenceNumber = 0;
+
+    tempPacket.dataLength = 0;
+
+    tempPacket.erc = 0;
+
+    return tempPacket;
+
+}
+
+Packet PacketFormer::formTransferAccept() {
+
+    // Reset packet contents
+    (tempPacket.data).clear();
+
+    // Set packet field(s)
+    tempPacket.controlCode = 0b1001;
+
+    tempPacket.sequenceNumber = 0;
+
+    tempPacket.dataLength = 0;
+
+    tempPacket.erc = 0;
+
+    return tempPacket;
+
+}
+
+Packet PacketFormer::formTransferDecline() {
+
+    // Reset packet contents
+    (tempPacket.data).clear();
+
+    // Set packet field(s)
+    tempPacket.controlCode = 0b1010;
+
+    tempPacket.sequenceNumber = 0;
+
+    tempPacket.dataLength = 0;
+
+    tempPacket.erc = 0;
+
+    return tempPacket;
+
+}
+
+Packet PacketFormer::formRxTransactionDroppedPacket() {
+
+    // Reset packet contents
+    (tempPacket.data).clear();
+
+    // Set packet field(s)
+    tempPacket.controlCode = 0b1011;
+
+    tempPacket.sequenceNumber = 0;
+
+    tempPacket.dataLength = 0;
+
+    tempPacket.erc = 0;
+
+    return tempPacket;
+
+}
+
+Packet PacketFormer::formTransactionEndAcknowledge() {
+
+    // Reset packet contents
+    (tempPacket.data).clear();
+
+    // Set packet field(s)
+    tempPacket.controlCode = 0b1111;
+
+    tempPacket.sequenceNumber = 0;
+
+    tempPacket.dataLength = 0;
 
     tempPacket.erc = 0;
 
