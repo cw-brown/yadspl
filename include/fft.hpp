@@ -162,44 +162,7 @@ double* make_psd(std::complex<double>* vec, size_t n){
 	return output;
 }
 
-/**
- * @brief Compute the double-sided PSD for a complex signal
- * @param in complex input signal
- * @param n size of the complex input
- * @param output pointer to the magnitude output
- */
-double* compute_psd(std::complex<double>* in, size_t n){
-	fftw_complex* fft_in = reinterpret_cast<fftw_complex*>(fftw_malloc(sizeof(fftw_complex) * n));
-	fftw_complex* fft_out = reinterpret_cast<fftw_complex*>(fftw_malloc(sizeof(fftw_complex) * n));
-
-	for(size_t i = 0; i < n; ++i){
-		fft_in[i][0] = in[i].real();
-		fft_in[i][1] = in[i].imag();
-	}
-	fftw_plan plan = fftw_plan_dft_1d(n, fft_in, fft_out, FFTW_FORWARD, FFTW_ESTIMATE);
-	fftw_execute(plan);
-
-	double* output = new double[n];
-
-	std::complex<double>* fft = reinterpret_cast<std::complex<double>*>(fft_out);
-	const size_t half = std::floor(n / 2);
-	for(size_t i = 0; i < half; ++i){
-		output[i] = 10.0 * std::log10(std::pow(std::norm(fft[half - i]), 2.0) / n);
-		// output[i] = 10.0 * std::log10(std::abs(fft[i]) / n);
-		output[n - i] = output[i];
-	}
-	double max_point = *std::max_element(output, output + n);
-	for(size_t i = 0; i < n; ++i){
-		output[i] -= max_point;
-	}
-
-	fftw_destroy_plan(plan);
-	fftw_free(fft_in);
-	fftw_free(fft_out);
-	return output;
-}
-
-void real_psd(std::complex<double>* in, size_t n, double* output, double* freqs){
+void compute_psd(std::complex<double>* in, size_t n, double* output, double* freqs){
 	fftw_complex* fft_in = reinterpret_cast<fftw_complex*>(fftw_malloc(sizeof(fftw_complex) * n));
 	fftw_complex* fft_out = reinterpret_cast<fftw_complex*>(fftw_malloc(sizeof(fftw_complex) * n));
 
@@ -221,7 +184,29 @@ void real_psd(std::complex<double>* in, size_t n, double* output, double* freqs)
 
 	for(size_t k = 0; k < n; ++k){
 		output[k] -= maximum;
-        freqs[k] = (k - n / 2.0) / n;
+		if(freqs != nullptr){
+        	freqs[k] = (k - n / 2.0) / n;
+		}
+    }
+}
+
+void double_psd(double* in, size_t n, double* output, double* freqs){
+	fftw_complex* fft_out = reinterpret_cast<fftw_complex*>(fftw_malloc(sizeof(fftw_complex) * n));
+	fftw_plan plan = fftw_plan_dft_r2c_1d(n, in, fft_out, FFTW_ESTIMATE);
+	fftw_execute(plan);
+
+	std::complex<double>* fft = reinterpret_cast<std::complex<double>*>(fft_out);
+	for(size_t i = 0; i < n; ++i){
+		output[i] = 10.0 * std::log10(std::abs(fft[i]) / n);
+	}
+	const size_t half = std::floor(n / 2);
+	std::rotate(output, output + half, output + n);
+	auto maximum = *std::max_element(output, output + n);
+	for(size_t k = 0; k < n; ++k){
+		output[k] -= maximum;
+		if(freqs != nullptr){
+       		freqs[k] = (k - n / 2.0) / n;
+		}
     }
 }
 

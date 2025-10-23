@@ -124,7 +124,7 @@ public:
      */
     out_t filter(const out_t& sample){
         feed_sample(sample);
-        auto out =  operate();
+        out_t out =  operate();
         increment();
         return out;
     }
@@ -189,7 +189,7 @@ public:
             double lambda = i * PI / points;
             std::complex<double> accum(0.0, 0.0);
             for(size_t j = 0; j < _N; ++j){
-                accum += std::polar(_taps[j], -lambda * j);
+                accum += _taps[j] * std::polar(1.0, -lambda * j);
             }
             output.frequencies[i] = lambda;
             output.magnitudes[i] = 10.0 * std::log10(std::norm(accum));
@@ -485,6 +485,14 @@ private:
 
     static constexpr double PI = std::numbers::pi;
 
+    /* AUTOMATIC GAIN CONTROL VARIABLES */
+    double _agc_rate;
+    double _agc_ref;
+    double _agc_gain;
+    double _agc_max_gain;
+
+    /************************************/
+
     /* FREQUENCY RECOVERY VARIABLES */
     double _fll_phase, _fll_freq;
     double _fll_max_freq, _fll_min_freq;
@@ -492,8 +500,13 @@ private:
     double _fll_alpha, _fll_beta;
     size_t _fll_size;
 
+    double* _fll_err_total, * _fll_phase_total, * _fll_freq_total;
+    double _fll_upper_err, _fll_lower_err;
+    size_t _debug_curr;
+
     eftc<std::complex<double>, std::complex<double>> _fll_lowerband_filter;
     eftc<std::complex<double>, std::complex<double>> _fll_upperband_filter;
+
     /********************************/
 
     /* PHASE RECOVERY VARIABLES */
@@ -505,7 +518,7 @@ private:
      */
     void update_internals(){
         update_fll(); // initialize fll internal variables and update fll filters
-
+        update_agc(); // initialize the AGC section
     }
 
     double sinc(double x){
@@ -527,7 +540,6 @@ public:
         : _sps(sps), _n_filts(n), _constel(constel), _loop_bw(loop_bandwidth), _rolloff(rolloff)
         , _pll_prototype(root_nyquist(_n_filts, _n_filts * _sps, 1.0, _rolloff, _n_filts))
         , _pll_pfb(1.0 / _sps, _n_filts, _pll_prototype){
-        _fll_size = 55;
         update_internals();
     }
 
@@ -547,25 +559,37 @@ public:
 
     void set_fll_size(size_t size){_fll_size = size; update_fll();}
 
+
     /**
      * @brief Operate the symbol recovery on one sample.
      * @param sample complex sample from input stream
      * @param output buffer having enough space for the output
      */
     void operate(const std::complex<double>& sample, std::complex<double>* output){
-        /* FLL CALCULATIONS */
-        std::complex<double> fll_nco = std::polar(1.0 / _sps, _fll_phase);
-        *output = sample * fll_nco;
+        /* AGC CALCULATIONS - WORKS */
+        // std::complex<double> agc_output = sample * _agc_gain;
+        // _agc_gain += _agc_rate * (_agc_ref - std::sqrt(std::pow(agc_output.real(), 2.0) + std::pow(agc_output.imag(), 2.0)));
+        // if(_agc_gain > _agc_max_gain){
+        //     _agc_gain = _agc_max_gain;
+        // }
 
-        _fll_lowerband_filter.feed_sample(sample);
-        _fll_upperband_filter.feed_sample(sample);
-        const std::complex<double> out_lower = _fll_lowerband_filter.operate();
-        const std::complex<double> out_upper = _fll_upperband_filter.operate();
+        /*******************/
 
-        double fll_err = std::norm(out_lower) - std::norm(out_upper);
-        // double fll_err = (std::norm(out_upper) - std::norm(out_lower)) / (std::norm(out_upper) + std::norm(out_lower) + 1e-6);
+        /* FLL CALCULATIONS - DOESNT WORK*/
+        std::complex<double> fll_nco = std::polar(1.0,  _fll_phase);
+        output[0] = sample * fll_nco;
+    
+        std::complex<double> out_lower = _fll_lowerband_filter.filter(output[0]);
+        std::complex<double> out_upper = _fll_upperband_filter.filter(output[0]);
+
+
+        double fll_err = std::norm(out_upper) - std::norm(out_lower);
+
+        _fll_lower_err = std::norm(out_lower);
+        _fll_upper_err = std::norm(out_upper);
+
         _fll_freq += _fll_beta * fll_err;
-        _fll_phase += _fll_freq + _fll_alpha * fll_err;
+        _fll_phase += _fll_freq;
         
         // Wrap around
         if(_fll_phase > 2.0 * PI) _fll_phase = std::fmod(_fll_phase, 2.0 * PI);
@@ -573,27 +597,64 @@ public:
         _fll_freq = _fll_freq > _fll_max_freq ? _fll_max_freq : _fll_freq;
         _fll_freq = _fll_freq < _fll_min_freq ? _fll_min_freq : _fll_freq;
 
-        _fll_lowerband_filter.increment();
-        _fll_upperband_filter.increment();
+        // while(_fll_phase > 2.0 * PI) _fll_phase -= 2.0 * PI;
+        // while(_fll_phase < 2.0 * PI) _fll_phase += 2.0 * PI;
+
+        _fll_err_total[_debug_curr] = fll_err;
+        _fll_freq_total[_debug_curr] = _fll_freq;
+        _fll_freq_total[_debug_curr] = _fll_phase;
+        _debug_curr = (_debug_curr + 1) % 500;
+
+        // _fll_lowerband_filter.reset();
+
+
+        // std::cout<<"Input Sample: "<<sample<<", ";
+        // std::cout<<"Upper, Lower: "<<std::norm(out_upper)<<", "<<std::norm(out_lower)<<", ";
+        // std::cout<<"Error: "<<fll_err<<", Phase: "<<_fll_phase<<", Frequency: "<<_fll_freq<<"\n";
 
         /*******************/
 
         /* PLL CALCULATIONS */
-        // _pll_pfb.operate(sample, output);
+        // int n = _pll_pfb.operate(sample, output);
+        
         /*******************/
     }
 
+    double* fll_err(){return _fll_err_total;}
+    double* fll_phase(){return _fll_phase_total;}
+    double* fll_freq(){return _fll_freq_total;}
+    double fll_upper(){return _fll_upper_err;}
+    double fll_lower(){return _fll_lower_err;}
+
+    void reset(){
+        _fll_upperband_filter.reset();
+        _fll_lowerband_filter.reset();
+    }
+
 private:
+    void update_agc(){
+        _agc_rate = 1e-4;
+        _agc_ref = 1.0;
+        _agc_gain = 1.0;
+        _agc_max_gain = 1e3;
+    }
+
     void update_fll(){
         _fll_damping = std::sqrt(2.0) / 2.0;
         _fll_alpha = 0.0;
-        // _fll_alpha = 4.0 * _fll_damping * _loop_bw / (1.0 + 2.0 * _fll_damping * _loop_bw + std::pow(_loop_bw, 2.0));
-        // _fll_beta = 4.0 * std::pow(_loop_bw, 2.0) / (1.0 + 2.0 * _fll_damping * _loop_bw + std::pow(_loop_bw, 2.0));
-        _fll_beta = 8.0 * PI * _loop_bw / static_cast<double>(_sps);
+        _fll_beta = 4.0 * _loop_bw / static_cast<double>(_sps);
+        // _fll_beta = 8.0 * PI * _loop_bw / static_cast<double>(_sps);
         _fll_max_freq = 4.0 * PI / static_cast<double>(_sps);
         _fll_min_freq = -4.0 * PI / static_cast<double>(_sps);
         _fll_phase = 0.0;
         _fll_freq = 0.0;
+        _fll_err_total = new double[500];
+        _fll_phase_total = new double[500];
+        _fll_freq_total = new double[500];
+        _debug_curr = 0;
+        _fll_upper_err = 0.0;
+        _fll_lower_err = 0.0;
+        _fll_size = 55;
         set_fll_filter();
     }
 
@@ -603,7 +664,7 @@ private:
 
         double* temp = new double[_fll_size];
         for(size_t i = 0; i < _fll_size; ++i){
-            const double k = static_cast<double>(-M) + static_cast<double>(i) * 2.0 / static_cast<double>(_sps);
+            const double k = static_cast<double>(-M) + (static_cast<double>(i) * 2.0 / static_cast<double>(_sps));
             const double pos = _rolloff * k;
             double tap = sinc(pos + 0.5) + sinc(pos - 0.5);
             power += std::pow(tap, 2.0);

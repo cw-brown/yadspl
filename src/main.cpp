@@ -29,40 +29,37 @@
 #define DO_WINDOW true
 
 int main(){
+    using cpx = std::complex<double>;
     size_t sps = 4;
     size_t n_filt = 32;
     size_t points = 250;
     size_t N = sps * points;
-    size_t k = 0;
+    // size_t k = 0;
+    // size_t j = 0;
 
     static float v = 0.0f;
     static float offset = 0.0f;
 
-    constellation_qpsk QPSK{};
+    constellation_bpsk constel{};
     noise<double> sig_gen{};
-    static channel_model model(offset, v);
-    rectangular_modulator modulator(&QPSK, sps, n_filt, 0.35);
-    std::complex<double>* sig_buffer = new std::complex<double>[N];
-    double* sig_psd = new double[N];
-    double* sig_freqs = new double[N];
-    std::complex<double>* sig_buff_copy = new std::complex<double>[N];
+    channel_model channel(offset, v);
+    rectangular_modulator modulator(&constel, sps, n_filt, 0.35);
+    firefighter recovery(&constel, sps, n_filt, 2.0*3.1415/100.0, 0.35);
 
-    firefighter recovery(&QPSK, sps, n_filt, 2.0*3.14/200.0, 0.35);
-    std::complex<double>* rec_buffer = new std::complex<double>[N];
-    double* rec_psd = new double[N];
-    double* rec_freqs = new double[N];
-
+    cpx* data = new cpx[N];
+    cpx* data_copy = new cpx[N];
     for(size_t i = 0; i < points; ++i){
-        auto point = sig_gen.random_int_range(0, QPSK.get_size() - 1);
-        modulator.operate(point, sig_buffer + (i * sps));
+        auto point = sig_gen.random_int_range(0, constel.get_size() - 1);
+        modulator.operate(point, data + i * sps);
     }
+    double* data_fft = new double[N];
+    double* data_freq = new double[N];
 
-    auto prot = root_nyquist(n_filt, n_filt * sps, 1.0, 0.35, 8 * n_filt * sps);
-    resampler<std::complex<double>> decim(1.0 / sps, n_filt, prot);
-    std::complex<double>* symb_buffer = new std::complex<double>[points];
-    std::complex<double>* symb = new std::complex<double>[sps];
-    double* symb_real = new double[points];
-    double* symb_imag = new double[points];
+    cpx* output = new cpx[N];
+    double* output_fft = new double[N];
+    double* output_freq = new double[N];
+
+
 
 #if DO_WINDOW
     GLFWwindow* window = glfw_makeNewWindow(1920, 1080, "Yet Another DSP Library", true, true, true);
@@ -72,29 +69,16 @@ int main(){
     while(!glfwWindowShouldClose(window)){
         glfw_frame();
 
-        std::copy_n(sig_buffer, N, sig_buff_copy);
+        std::copy_n(data, N, data_copy);
         for(size_t i = 0; i < N; ++i){
-            model.operate(sig_buff_copy + i);
+            channel.operate(data_copy + i);
         }
-        real_psd(sig_buff_copy, N, sig_psd, sig_freqs);
-
+        compute_psd(data_copy, N, data_fft, data_freq);
         for(size_t i = 0; i < N; ++i){
-            recovery.operate(sig_buff_copy[i], rec_buffer + i);
+            recovery.operate(data_copy[i], output + (int)i);
         }
-        real_psd(rec_buffer, N, rec_psd, rec_freqs);
+        compute_psd(output, N, output_fft, output_freq);
 
-        int j = 0;
-        for(size_t i = 0; i < N; ++i){
-            int n = decim.operate(rec_buffer[i], symb);
-            if(n > 0){
-                symb_buffer[j] = *symb;
-                symb_real[j] = symb->real();
-                symb_imag[j] = symb->imag();
-                j++;
-            }
-        }
-
-   
 
         ImGui::SetNextWindowPos(ImVec2(0, 0));
         ImGui::SetNextWindowSize(ImVec2(ImGui::GetIO().DisplaySize.x, ImGui::GetIO().DisplaySize.y));
@@ -106,21 +90,28 @@ int main(){
         if(ImGui::BeginTabItem("Item 0")){
             ImGui::SliderFloat("Offset", &offset, 0.0, 1.0);
             ImGui::SliderFloat("Noise", &v, 0.0, 1.0);
-            model.set_noise(v);
-            model.set_offset(offset);
+            channel.set_noise(v);
+            channel.set_offset(offset);
+            ImGui::Text((std::string("Lower: ") + std::to_string(recovery.fll_upper())).c_str());
+            ImGui::Text((std::string("Upper: ") + std::to_string(recovery.fll_lower())).c_str());
             if(ImPlot::BeginPlot("Plot 0", ImVec2(-1, 750))){
-                ImPlot::SetupAxesLimits(-0.5, 0.5, -50, 5);
-                ImPlot::PlotLine("Signal FFT", sig_freqs, sig_psd, N);
-                ImPlot::PlotLine("FLL FFT", rec_freqs, rec_psd, N);
+                ImPlot::SetupAxisLimits(ImAxis_Y1, -30, 5);
+                ImPlot::PlotLine("Data", data_freq, data_fft, N);
+                ImPlot::PlotLine("Output", output_freq, output_fft, N);
                 ImPlot::EndPlot();
             }
             if(ImPlot::BeginPlot("Plot 1", ImVec2(-1, 750))){
-                ImPlot::PlotScatter("", symb_real, symb_imag, points);
+                ImPlot::SetupAxesLimits(0, 500, -1, 1);
+                ImPlot::PlotLine("Error", recovery.fll_err(), 500);
+                ImPlot::PlotLine("Phase", recovery.fll_phase(), 500);
+                ImPlot::PlotLine("Frequency", recovery.fll_freq(), 500);
                 ImPlot::EndPlot();
             }
+
             ImGui::EndTabItem();
         }
         if(ImGui::BeginTabItem("Items 1")){
+
             ImGui::EndTabItem();
         }
         if(ImGui::BeginTabItem("Items 2")){
