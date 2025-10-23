@@ -34,13 +34,11 @@ int main(){
     size_t n_filt = 32;
     size_t points = 250;
     size_t N = sps * points;
-    // size_t k = 0;
-    // size_t j = 0;
 
     static float v = 0.0f;
     static float offset = 0.0f;
 
-    constellation_bpsk constel{};
+    constellation_16qam constel{};
     noise<double> sig_gen{};
     channel_model channel(offset, v);
     rectangular_modulator modulator(&constel, sps, n_filt, 0.35);
@@ -59,7 +57,11 @@ int main(){
     double* output_fft = new double[N];
     double* output_freq = new double[N];
 
-
+    std::ring<double> real(points);
+    std::ring<double> imag(points);
+    cpx* const_buff = new cpx;
+    auto prot = root_nyquist(n_filt, n_filt * sps, 1.0, 0.35, 8 * sps * n_filt);
+    resampler<cpx> arb(1.0 / sps, n_filt, prot);
 
 #if DO_WINDOW
     GLFWwindow* window = glfw_makeNewWindow(1920, 1080, "Yet Another DSP Library", true, true, true);
@@ -78,6 +80,13 @@ int main(){
             recovery.operate(data_copy[i], output + (int)i);
         }
         compute_psd(output, N, output_fft, output_freq);
+        for(size_t i = 0; i < N; ++i){
+            if(arb.operate(output[i], const_buff) != 0){
+                real.push_back(const_buff->real());
+                imag.push_back(const_buff->imag());
+            }
+            
+        }
 
 
         ImGui::SetNextWindowPos(ImVec2(0, 0));
@@ -88,7 +97,7 @@ int main(){
         ImGui::Begin("Plottings", nullptr, topbarflags);
         if(ImGui::BeginTabBar("Main Tabs")){
         if(ImGui::BeginTabItem("Item 0")){
-            ImGui::SliderFloat("Offset", &offset, 0.0, 1.0);
+            ImGui::SliderFloat("Offset", &offset, -1.0, 1.0);
             ImGui::SliderFloat("Noise", &v, 0.0, 1.0);
             channel.set_noise(v);
             channel.set_offset(offset);
@@ -100,12 +109,20 @@ int main(){
                 ImPlot::PlotLine("Output", output_freq, output_fft, N);
                 ImPlot::EndPlot();
             }
-            if(ImPlot::BeginPlot("Plot 1", ImVec2(-1, 750))){
-                ImPlot::SetupAxesLimits(0, 500, -1, 1);
+            if(ImPlot::BeginSubplots("Debug Info", 1, 2, ImVec2(-1, 750))){
+            if(ImPlot::BeginPlot("Errors")){
+                ImPlot::SetupAxesLimits(0, 500, 2.0*3.141, -2.0*3.141);
                 ImPlot::PlotLine("Error", recovery.fll_err(), 500);
                 ImPlot::PlotLine("Phase", recovery.fll_phase(), 500);
                 ImPlot::PlotLine("Frequency", recovery.fll_freq(), 500);
                 ImPlot::EndPlot();
+            }
+            if(ImPlot::BeginPlot("Constellation")){
+                ImPlot::SetupAxesLimits(-2, 2, -2, 2);
+                ImPlot::PlotScatter("Constellation", real.data(), imag.data(), real.size());
+                ImPlot::EndPlot();
+            }
+                ImPlot::EndSubplots();
             }
 
             ImGui::EndTabItem();

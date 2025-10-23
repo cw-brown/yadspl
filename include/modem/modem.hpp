@@ -490,7 +490,6 @@ private:
     double _agc_ref;
     double _agc_gain;
     double _agc_max_gain;
-
     /************************************/
 
     /* FREQUENCY RECOVERY VARIABLES */
@@ -506,26 +505,25 @@ private:
 
     eftc<std::complex<double>, std::complex<double>> _fll_lowerband_filter;
     eftc<std::complex<double>, std::complex<double>> _fll_upperband_filter;
-
     /********************************/
 
     /* PHASE RECOVERY VARIABLES */
     std::vector<double> _pll_prototype;
     resampler<std::complex<double>> _pll_pfb;
 
-    /**
-     * @brief Update all internal parameters of the recovery because of updated parameters
-     */
-    void update_internals(){
-        update_fll(); // initialize fll internal variables and update fll filters
-        update_agc(); // initialize the AGC section
-    }
+    eftc<double, std::complex<double>>* _pll_bank;
+    eftc<double, std::complex<double>>* _pll_deriv_bank;
+
+    double _pll_rate, _pll_rate_i, _pll_rate_f;
+    double _pll_damping, _pll_alpha, _pll_beta;
+    size_t _pll_taps_per_arm, _pll_curr_arm;
+    double _pll_k, _pll_max_deviation, _pll_error;
+    /****************************/
 
     double sinc(double x){
         if(x > -1e-6 && x < 1e-6) return 1.0;
         else return std::sin(PI * x) / (PI * x);
     }
-
 public:
     firefighter() = delete;
 
@@ -538,7 +536,7 @@ public:
      */
     firefighter(constellation* constel, const size_t& sps, const size_t& n, double loop_bandwidth, double rolloff)
         : _sps(sps), _n_filts(n), _constel(constel), _loop_bw(loop_bandwidth), _rolloff(rolloff)
-        , _pll_prototype(root_nyquist(_n_filts, _n_filts * _sps, 1.0, _rolloff, _n_filts))
+        , _pll_prototype(root_nyquist(_n_filts, _n_filts * _sps, 1.0, _rolloff, 8 * _n_filts * _sps))
         , _pll_pfb(1.0 / _sps, _n_filts, _pll_prototype){
         update_internals();
     }
@@ -559,6 +557,9 @@ public:
 
     void set_fll_size(size_t size){_fll_size = size; update_fll();}
 
+    std::vector<double> get_pll_prototype() const{return _pll_prototype;}
+    eftc<double, std::complex<double>>* get_pll_bank() const{return _pll_bank;}
+    eftc<double, std::complex<double>>* get_pll_deriv_bank() const{return _pll_deriv_bank;}
 
     /**
      * @brief Operate the symbol recovery on one sample.
@@ -567,21 +568,19 @@ public:
      */
     void operate(const std::complex<double>& sample, std::complex<double>* output){
         /* AGC CALCULATIONS - WORKS */
-        // std::complex<double> agc_output = sample * _agc_gain;
-        // _agc_gain += _agc_rate * (_agc_ref - std::sqrt(std::pow(agc_output.real(), 2.0) + std::pow(agc_output.imag(), 2.0)));
-        // if(_agc_gain > _agc_max_gain){
-        //     _agc_gain = _agc_max_gain;
-        // }
-
+        std::complex<double> agc_output = sample * _agc_gain;
+        _agc_gain += _agc_rate * (_agc_ref - std::sqrt(std::pow(agc_output.real(), 2.0) + std::pow(agc_output.imag(), 2.0)));
+        if(_agc_gain > _agc_max_gain){
+            _agc_gain = _agc_max_gain;
+        }
         /*******************/
 
-        /* FLL CALCULATIONS - DOESNT WORK*/
-        std::complex<double> fll_nco = std::polar(1.0,  _fll_phase);
-        output[0] = sample * fll_nco;
+        /* FLL CALCULATIONS - WORKS */
+        std::complex<double> fll_nco = std::polar(0.5,  _fll_phase);
+        output[0] = agc_output * fll_nco;
     
         std::complex<double> out_lower = _fll_lowerband_filter.filter(output[0]);
         std::complex<double> out_upper = _fll_upperband_filter.filter(output[0]);
-
 
         double fll_err = std::norm(out_upper) - std::norm(out_lower);
 
@@ -597,25 +596,14 @@ public:
         _fll_freq = _fll_freq > _fll_max_freq ? _fll_max_freq : _fll_freq;
         _fll_freq = _fll_freq < _fll_min_freq ? _fll_min_freq : _fll_freq;
 
-        // while(_fll_phase > 2.0 * PI) _fll_phase -= 2.0 * PI;
-        // while(_fll_phase < 2.0 * PI) _fll_phase += 2.0 * PI;
-
         _fll_err_total[_debug_curr] = fll_err;
         _fll_freq_total[_debug_curr] = _fll_freq;
         _fll_freq_total[_debug_curr] = _fll_phase;
         _debug_curr = (_debug_curr + 1) % 500;
-
-        // _fll_lowerband_filter.reset();
-
-
-        // std::cout<<"Input Sample: "<<sample<<", ";
-        // std::cout<<"Upper, Lower: "<<std::norm(out_upper)<<", "<<std::norm(out_lower)<<", ";
-        // std::cout<<"Error: "<<fll_err<<", Phase: "<<_fll_phase<<", Frequency: "<<_fll_freq<<"\n";
-
         /*******************/
 
-        /* PLL CALCULATIONS */
-        // int n = _pll_pfb.operate(sample, output);
+        /* PLL CALCULATIONS - NOT IMPLEMENTED */
+        
         
         /*******************/
     }
@@ -629,6 +617,10 @@ public:
     void reset(){
         _fll_upperband_filter.reset();
         _fll_lowerband_filter.reset();
+        for(size_t i = 0; i < _n_filts; ++i){
+            _pll_bank[i].reset();
+            _pll_deriv_bank[i].reset();
+        }
     }
 
 private:
@@ -643,7 +635,6 @@ private:
         _fll_damping = std::sqrt(2.0) / 2.0;
         _fll_alpha = 0.0;
         _fll_beta = 4.0 * _loop_bw / static_cast<double>(_sps);
-        // _fll_beta = 8.0 * PI * _loop_bw / static_cast<double>(_sps);
         _fll_max_freq = 4.0 * PI / static_cast<double>(_sps);
         _fll_min_freq = -4.0 * PI / static_cast<double>(_sps);
         _fll_phase = 0.0;
@@ -656,6 +647,23 @@ private:
         _fll_lower_err = 0.0;
         _fll_size = 55;
         set_fll_filter();
+    }
+
+    void update_pll(){
+        _pll_bank = new eftc<double, std::complex<double>>[_n_filts];
+        _pll_deriv_bank = new eftc<double, std::complex<double>>[_n_filts];
+        _pll_damping = 2.0 * static_cast<double>(_n_filts);
+        _pll_alpha = 4.0 * _pll_damping * _loop_bw / (1.0 + 2.0 * _pll_damping * _loop_bw + std::pow(_loop_bw, 2.0));
+        _pll_beta = 4.0 * std::pow(_loop_bw, 2.0) / (1.0 + 2.0 * _pll_damping * _loop_bw + std::pow(_loop_bw, 2.0));
+        _pll_error = 0.0;
+        _pll_k = _n_filts / 2;
+        _pll_rate = _sps * _n_filts;
+        _pll_max_deviation = 1.5;
+        _pll_rate_i = static_cast<int>(std::floor(_pll_rate));
+        _pll_rate_f = _pll_rate - _pll_rate_f;
+        _pll_curr_arm = std::floor(_pll_k);
+        _pll_taps_per_arm = std::ceil(_pll_prototype.size() / _n_filts);
+        set_pll_filters();
     }
 
     void set_fll_filter(){
@@ -685,6 +693,54 @@ private:
         _fll_upperband_filter.update_taps(upper, _fll_size);
     }
 
+    void set_pll_filters(){
+        // Allocate a temporary buffer to hold a zero padded array of the prototype
+        double* temp = new double[_n_filts * _pll_taps_per_arm];
+        std::uninitialized_default_construct_n(temp, _n_filts * _pll_taps_per_arm);
+        std::copy_n(_pll_prototype.data(), _pll_prototype.size(), temp);
+
+        // Create the polyphase bank
+        for(size_t i = 0; i < _n_filts; ++i){
+            double* temp_sub = new double[_pll_taps_per_arm];
+            for(size_t j = 0; j < _pll_taps_per_arm; ++j){
+                temp_sub[j] = temp[i + j * _n_filts];
+            }
+            _pll_bank[i].update_taps(temp_sub, _pll_taps_per_arm);
+        }
+
+        // Generate a derivative of the prototype
+        double differentiator[3] = {-1.0, 0.0, 1.0};
+        double power = 0.0;
+        double* diff_filt = new double[_pll_prototype.size()];
+        for(size_t i = 0; i < _pll_prototype.size() - 2; ++i){
+            double accum = 0.0;
+            for(size_t j = 0; j < 3; ++j){
+                accum += differentiator[j] * _pll_prototype[i + j];
+            }
+            diff_filt[i] = accum;
+        }
+        diff_filt[_pll_prototype.size() - 1] = 0.0;
+
+        // Make the derivative polyphase bank
+        std::copy_n(diff_filt, _pll_prototype.size(), temp);
+        for(size_t i = 0; i < _n_filts; ++i){
+            double* temp_sub = new double[_pll_taps_per_arm];
+            for(size_t j = 0; j < _pll_taps_per_arm; ++j){
+                temp_sub[j] = temp[i + j * _n_filts];
+            }
+            _pll_deriv_bank[i].update_taps(temp_sub, _pll_taps_per_arm);
+        }
+    }
+
+    /**
+     * @brief Update all internal parameters of the recovery because of updated parameters
+     */
+    void update_internals(){
+        update_fll(); // initialize fll internal variables and update fll filters
+        update_agc(); // initialize the AGC section
+        update_pll(); // initialize the pll and its polyphase bank
+        reset(); // reset internal states for filters
+    }
 };
 
 #endif
