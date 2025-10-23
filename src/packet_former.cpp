@@ -3,8 +3,8 @@
 #include <bit>
 
 PacketFormer::PacketFormer(
-        uint32_t sender_address,
-        uint32_t reciever_address) :
+        uint8_t sender_address,
+        uint8_t reciever_address) :
         //inputBuffer(input_buffer),
         //outputBuffer(output_buffer),
         senderAddress(sender_address),

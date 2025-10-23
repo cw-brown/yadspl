@@ -27,6 +27,17 @@ struct SimpPacket {
     uint8_t dataLength;
 
     /**
+     * @brief The address of the sender of this packet
+     */
+    uint8_t recieverAddress;
+
+    /**
+     * @brief The address of the sender of this packet
+     */
+    uint8_t senderAddress;
+
+
+    /**
      * @brief The sequence number of the current packet
      */
     uint8_t sequenceNumber;
@@ -37,9 +48,9 @@ struct SimpPacket {
    std::vector<uint8_t> data;
 
    /**
-    * @brief Contains ISO-3309 CRC-32 checksum
+    * @brief True checksum returned good 
     */
-   uint32_t erc;
+   bool erc;
 
 };
 

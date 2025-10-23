@@ -35,12 +35,12 @@ struct Packet {
     /**
      * @brief The address of the sender of this packet
      */
-    uint32_t recieverAddress;
+    uint8_t recieverAddress;
 
     /**
      * @brief The address of the sender of this packet
      */
-    uint32_t senderAddress;
+    uint8_t senderAddress;
 
     /**
      * @brief The sequence number of the current packet

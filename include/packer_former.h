@@ -46,8 +46,8 @@ class PacketFormer {
      * @brief Construct a new packet former
      */
     PacketFormer(
-        uint32_t sender_address,
-        uint32_t reciever_address);
+        uint8_t sender_address,
+        uint8_t reciever_address);
 
 
     // Transmitter Packets

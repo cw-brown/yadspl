@@ -9,6 +9,7 @@
 # define PACKET_UNFORMER_H
 
 # include "packet.h"
+# include "simple_packet.h"
 # include "crcinterface.h"
 # include <cstdint>
 # include <queue>
@@ -24,6 +25,11 @@ class PacketUnformer {
      * @brief A pointer to the crc generator
      */
     crcutil_interface::CRC * crcGenny;
+
+    /**
+     * @brief A buffer of packets
+     */
+    std::queue<SimpPacket> buffer;
 
     public:
 
@@ -41,6 +47,12 @@ class PacketUnformer {
      * @brief Construct a new packet unformer
      */
     PacketUnformer(std::vector<bool> * in_data_buffer, std::vector<uint8_t> *  out_data_buffer);
+
+    /**
+     * @brief Process raw bitstream to a packet.
+     * @returns 0 if not enough data in stream, 1 if bad due to missing end flag, 2 if bad due to CRC, 255 if good
+     */
+    uint8_t formPacket();
     
 };
 
