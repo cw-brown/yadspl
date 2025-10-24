@@ -37,31 +37,33 @@ int main(){
 
     static float v = 0.0f;
     static float offset = 0.0f;
+    static int arm = 0;
 
-    constellation_16qam constel{};
+    constellation_qpsk constel{};
     noise<double> sig_gen{};
     channel_model channel(offset, v);
     rectangular_modulator modulator(&constel, sps, n_filt, 0.35);
     firefighter recovery(&constel, sps, n_filt, 2.0*3.1415/100.0, 0.35);
+    auto bank = recovery.get_pll_bank();
+    auto deriv = recovery.get_pll_deriv_bank();
 
     cpx* data = new cpx[N];
-    cpx* data_copy = new cpx[N];
+    cpx* data_c = new cpx[N];
+
     for(size_t i = 0; i < points; ++i){
         auto point = sig_gen.random_int_range(0, constel.get_size() - 1);
         modulator.operate(point, data + i * sps);
     }
+
     double* data_fft = new double[N];
     double* data_freq = new double[N];
 
-    cpx* output = new cpx[N];
-    double* output_fft = new double[N];
-    double* output_freq = new double[N];
-
-    std::ring<double> real(points);
-    std::ring<double> imag(points);
-    cpx* const_buff = new cpx;
-    auto prot = root_nyquist(n_filt, n_filt * sps, 1.0, 0.35, 8 * sps * n_filt);
-    resampler<cpx> arb(1.0 / sps, n_filt, prot);
+    cpx* buffer = new cpx;
+    cpx* output = new cpx[points];
+    double* output_fft = new double[points];
+    double* output_freq = new double[points];
+    double* real = new double[points];
+    double* imag = new double[points];
 
 #if DO_WINDOW
     GLFWwindow* window = glfw_makeNewWindow(1920, 1080, "Yet Another DSP Library", true, true, true);
@@ -71,24 +73,6 @@ int main(){
     while(!glfwWindowShouldClose(window)){
         glfw_frame();
 
-        std::copy_n(data, N, data_copy);
-        for(size_t i = 0; i < N; ++i){
-            channel.operate(data_copy + i);
-        }
-        compute_psd(data_copy, N, data_fft, data_freq);
-        for(size_t i = 0; i < N; ++i){
-            recovery.operate(data_copy[i], output + (int)i);
-        }
-        compute_psd(output, N, output_fft, output_freq);
-        for(size_t i = 0; i < N; ++i){
-            if(arb.operate(output[i], const_buff) != 0){
-                real.push_back(const_buff->real());
-                imag.push_back(const_buff->imag());
-            }
-            
-        }
-
-
         ImGui::SetNextWindowPos(ImVec2(0, 0));
         ImGui::SetNextWindowSize(ImVec2(ImGui::GetIO().DisplaySize.x, ImGui::GetIO().DisplaySize.y));
         ImGuiWindowFlags topbarflags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize 
@@ -97,38 +81,55 @@ int main(){
         ImGui::Begin("Plottings", nullptr, topbarflags);
         if(ImGui::BeginTabBar("Main Tabs")){
         if(ImGui::BeginTabItem("Item 0")){
-            ImGui::SliderFloat("Offset", &offset, -1.0, 1.0);
-            ImGui::SliderFloat("Noise", &v, 0.0, 1.0);
-            channel.set_noise(v);
-            channel.set_offset(offset);
-            ImGui::Text((std::string("Lower: ") + std::to_string(recovery.fll_upper())).c_str());
-            ImGui::Text((std::string("Upper: ") + std::to_string(recovery.fll_lower())).c_str());
-            if(ImPlot::BeginPlot("Plot 0", ImVec2(-1, 750))){
-                ImPlot::SetupAxisLimits(ImAxis_Y1, -30, 5);
-                ImPlot::PlotLine("Data", data_freq, data_fft, N);
-                ImPlot::PlotLine("Output", output_freq, output_fft, N);
-                ImPlot::EndPlot();
+
+            std::copy_n(data, N, data_c);
+            for(size_t i = 0; i < N; ++i){
+                channel.operate(data_c + i);
             }
-            if(ImPlot::BeginSubplots("Debug Info", 1, 2, ImVec2(-1, 750))){
-            if(ImPlot::BeginPlot("Errors")){
-                ImPlot::SetupAxesLimits(0, 500, 2.0*3.141, -2.0*3.141);
-                ImPlot::PlotLine("Error", recovery.fll_err(), 500);
-                ImPlot::PlotLine("Phase", recovery.fll_phase(), 500);
-                ImPlot::PlotLine("Frequency", recovery.fll_freq(), 500);
-                ImPlot::EndPlot();
+            compute_psd(data_c, N, data_fft, data_freq);
+
+            size_t j = 0;
+            for(size_t i = 0; i < N; ++i){
+                if(recovery.operate(data_c[i], buffer) != 0){
+                    output[j] = *buffer;
+                    j++;
+                } 
             }
-            if(ImPlot::BeginPlot("Constellation")){
-                ImPlot::SetupAxesLimits(-2, 2, -2, 2);
-                ImPlot::PlotScatter("Constellation", real.data(), imag.data(), real.size());
-                ImPlot::EndPlot();
-            }
-                ImPlot::EndSubplots();
+            compute_psd(output, points, output_fft, output_freq);
+
+            for(size_t i = 0; i < points; ++i){
+                real[i] = output[i].real();
+                imag[i] = output[i].imag();
             }
 
+            ImGui::SliderFloat("Frequency Offset", &offset, 0.0, 1.0);
+            ImGui::SliderFloat("Noise Voltage", &v, 0.0, 1e-1, "%.5f");
+            channel.set_noise(v);
+            channel.set_offset(offset);
+
+            if(ImPlot::BeginPlot("Plot 0", ImVec2(-1, 750))){
+                ImPlot::SetupAxesLimits(-0.5, 0.5, -30, 5);
+                ImPlot::PlotLine("Input", data_freq, data_fft, N);
+                ImPlot::PlotLine("Output", output_freq, output_fft, points);
+                ImPlot::EndPlot();
+            }
+            if(ImPlot::BeginPlot("Plot 1", ImVec2(-1, 750))){
+                ImPlot::SetupAxesLimits(-2, 2, -2, 2);
+                ImPlot::PlotScatter("", real, imag, N);
+                ImPlot::EndPlot();
+            }
             ImGui::EndTabItem();
         }
         if(ImGui::BeginTabItem("Items 1")){
-
+            ImGui::SliderInt("Arm", &arm, 0, 31);
+            if(ImPlot::BeginPlot("Plot 0", ImVec2(-1, 750))){
+                ImPlot::PlotBars("", bank[arm].get_taps(), bank[arm].get_num_taps());
+                ImPlot::EndPlot();
+            }
+            if(ImPlot::BeginPlot("Plot 1", ImVec2(-1, 750))){
+                ImPlot::PlotBars("", deriv[arm].get_taps(), deriv[arm].get_num_taps());
+                ImPlot::EndPlot();
+            }
             ImGui::EndTabItem();
         }
         if(ImGui::BeginTabItem("Items 2")){
