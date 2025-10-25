@@ -30,7 +30,7 @@
 
 int main(){
     using cpx = std::complex<double>;
-    size_t sps = 4;
+    size_t sps = 8;
     size_t n_filt = 32;
     size_t points = 250;
     size_t N = sps * points;
@@ -44,11 +44,11 @@ int main(){
     channel_model channel(offset, v);
     rectangular_modulator modulator(&constel, sps, n_filt, 0.35);
     firefighter recovery(&constel, sps, n_filt, 2.0*3.1415/100.0, 0.35);
-    auto bank = recovery.get_pll_bank();
-    auto deriv = recovery.get_pll_deriv_bank();
-
     cpx* data = new cpx[N];
     cpx* data_c = new cpx[N];
+
+    auto bank = recovery.get_bank();
+    auto dbank = recovery.get_d_bank();
 
     for(size_t i = 0; i < points; ++i){
         auto point = sig_gen.random_int_range(0, constel.get_size() - 1);
@@ -127,7 +127,7 @@ int main(){
                 ImPlot::EndPlot();
             }
             if(ImPlot::BeginPlot("Plot 1", ImVec2(-1, 750))){
-                ImPlot::PlotBars("", deriv[arm].get_taps(), deriv[arm].get_num_taps());
+                ImPlot::PlotBars("", dbank[arm].get_taps(), dbank[arm].get_num_taps());
                 ImPlot::EndPlot();
             }
             ImGui::EndTabItem();

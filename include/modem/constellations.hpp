@@ -40,6 +40,7 @@ public:
     }
 
     virtual unsigned int decision(const std::complex<double>& sample) = 0;
+    virtual double phase_error_detector(const std::complex<double>& sample) = 0;
 
     void normalize(normalization norm){
         switch(norm){
@@ -112,6 +113,10 @@ public:
         else return 1;
     }
 
+    double phase_error_detector(const std::complex<double>& sample) override{
+        return 0.0;
+    }
+
 };
 
 /*
@@ -134,6 +139,10 @@ public:
     unsigned int decision(const std::complex<double>& sample) override{
         return 2 * (sample.imag() > 0) + (sample.real() > 0);
     }
+    double phase_error_detector(const std::complex<double>& sample) override{
+        return (sample.real() > 0.0 ? 1.0 : -1.0) * sample.imag() - 
+               (sample.imag() > 0.0 ? 1.0 : -1.0) * sample.real();
+    }
 
     ~constellation_qpsk(){}
 };
@@ -152,6 +161,9 @@ public:
 
     unsigned int decision(const std::complex<double>& sample) override{
         return sample.real() >= 0 ? 1 : 0;
+    }
+    double phase_error_detector(const std::complex<double>& sample) override{
+        return sample.real() * sample.imag();
     }
 };
 

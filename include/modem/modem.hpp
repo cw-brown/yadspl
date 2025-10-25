@@ -287,6 +287,36 @@ public:
     }
 
     /**
+     * @brief Update the resampler with a range compatible container
+     * @param rate resampling rate
+     * @param num_filters total arms in the bank
+     * @param rg range containing the prototype
+     */
+    template<class R>
+    requires (std::ranges::input_range<R> && std::convertible_to<std::ranges::range_reference_t<R>, double>)
+    void update(const double& rate, const size_t& num_filters, R&& rg){
+        std::destroy_n(_bank, _n_filts);
+        std::destroy_n(_deriv_bank, _n_filts);
+        delete[] _bank;
+        delete[] _deriv_bank;
+        _rate = rate;
+        _n_filts = num_filters;
+        _tau = 0.0;
+        _theta = 0.0;
+        _mu = 0.0;
+        _curr = std::ceil(_n_filts / 2);
+        x = 0.0;
+        dx = 0.0;
+        _bank = new bank_t[_n_filts];
+        _deriv_bank = new bank_t[_n_filts];
+        _prot_size = std::ranges::distance(rg);
+        double* temp = new double[_prot_size];
+        std::uninitialized_copy(rg.begin(), rg.end(), temp);
+        update_taps(temp, _prot_size);
+        _state = INTERP;
+    }
+
+    /**
      * @brief Update the internal polyphase bank of the filter with a prototype
      * @param taps pointer to an FIR prototype taps
      * @param n size of the prototype
@@ -359,6 +389,11 @@ public:
         _curr = std::ceil(_n_filts / 2);
         x = 0.0;
         dx = 0.0;
+        _state = INTERP;
+        for(size_t i = 0; i < _n_filts; ++i){
+            _bank[i].reset();
+            _deriv_bank[i].reset();
+        }
     }
 
     eftc<double, out_t>* get_bank() const{return _bank;}
@@ -508,31 +543,39 @@ private:
     double _fll_alpha, _fll_beta;
     size_t _fll_size;
 
-    double* _fll_err_total, * _fll_phase_total, * _fll_freq_total;
-    double _fll_upper_err, _fll_lower_err;
-    size_t _debug_curr;
+    double _fll_err;
 
     eftc<std::complex<double>, std::complex<double>> _fll_lowerband_filter;
     eftc<std::complex<double>, std::complex<double>> _fll_upperband_filter;
     /********************************/
 
     /* PHASE RECOVERY VARIABLES */
+    double _pll_phase, _pll_freq;
+    double _pll_max_freq, _pll_min_freq;
+    double _pll_damping;
+    double _pll_alpha, _pll_beta;
+
+    double _pll_err;
+    std::complex<double>* _pll_output_buffer;
+
     std::vector<double> _pll_prototype;
     resampler<std::complex<double>> _pll_pfb;
 
-    eftc<double, std::complex<double>>* _pll_bank;
-    eftc<double, std::complex<double>>* _pll_deriv_bank;
+    // TEST VARIABLES FOR LIQUID DSP IMPLEMENTATION
+    size_t decim_count = 0;
+    bool locked = false;
+    double rate = 0;
+    double del = 0;
+    double tau = 0;
+    double tau_decim = 0;
+    double idx_f = 0;
+    int idx = 0;
 
-    double _pll_rate;
-    size_t _pll_taps_per_arm, _pll_curr_arm;
-    double _pll_tau;
-    double _pll_theta;
-    double _pll_mu;
+    double q = 0;
+    double q_hat = 0;
 
-    enum PLL_STATE{
-        BOUNDARY,
-        INTERP
-    } _pll_state;
+    eftc<double, std::complex<double>>* bank;
+    eftc<double, std::complex<double>>* d_bank;
     /****************************/
 
     double sinc(double x){
@@ -573,8 +616,8 @@ public:
     void set_fll_size(size_t size){_fll_size = size; update_fll();}
 
     std::vector<double> get_pll_prototype() const{return _pll_prototype;}
-    eftc<double, std::complex<double>>* get_pll_bank() const{return _pll_bank;}
-    eftc<double, std::complex<double>>* get_pll_deriv_bank() const{return _pll_deriv_bank;}
+    eftc<double, std::complex<double>>* get_bank(){return bank;}
+    eftc<double, std::complex<double>>* get_d_bank(){return d_bank;}
 
     /**
      * @brief Operate the symbol recovery on one sample.
@@ -591,105 +634,60 @@ public:
         /*******************/
 
         /* FLL CALCULATIONS - WORKS */
-        std::complex<double> fll_nco = std::polar(0.5,  _fll_phase);
+        std::complex<double> fll_nco = std::polar(1.0,  _fll_phase);
         std::complex<double> fll_output = agc_output * fll_nco;
     
         std::complex<double> out_lower = _fll_lowerband_filter.filter(fll_output);
         std::complex<double> out_upper = _fll_upperband_filter.filter(fll_output);
 
-        double fll_err = std::norm(out_upper) - std::norm(out_lower);
+        _fll_err = std::norm(out_upper) - std::norm(out_lower);
 
-        _fll_lower_err = std::norm(out_lower);
-        _fll_upper_err = std::norm(out_upper);
-
-        _fll_freq += _fll_beta * fll_err;
+        _fll_freq += _fll_beta * _fll_err;
         _fll_phase += _fll_freq;
         
         // Wrap around
-        if(_fll_phase > 2.0 * PI) _fll_phase = std::fmod(_fll_phase, 2.0 * PI);
-        if(_fll_phase < -2.0 * PI) _fll_phase = std::fmod(_fll_phase, -2.0 * PI);
+        // if(_fll_phase > 2.0 * PI) _fll_phase = std::fmod(_fll_phase, 2.0 * PI);
+        // if(_fll_phase < -2.0 * PI) _fll_phase = std::fmod(_fll_phase, -2.0 * PI);
         _fll_freq = _fll_freq > _fll_max_freq ? _fll_max_freq : _fll_freq;
         _fll_freq = _fll_freq < _fll_min_freq ? _fll_min_freq : _fll_freq;
 
-        _fll_err_total[_debug_curr] = fll_err;
-        _fll_freq_total[_debug_curr] = _fll_freq;
-        _fll_freq_total[_debug_curr] = _fll_phase;
-        _debug_curr = (_debug_curr + 1) % 500;
+        while(_fll_phase > 2.0 * PI) _fll_phase -= 2.0 * PI;
+        while(_fll_phase < -2.0 * PI) _fll_phase += 2.0 * PI;
         /*******************/
 
         /* PLL CALCULATIONS - NOT IMPLEMENTED */
-        for(size_t i = 0; i < _n_filts; ++i){
-            _pll_bank[i].feed_sample(fll_output);
-            _pll_deriv_bank[i].feed_sample(fll_output);
-        }
-        size_t n = 0;
-        std::complex<double> x = 0.0;
-        std::complex<double> dx = 0.0;
-        std::complex<double> pll_output = 0.0;
+        int n = _pll_pfb.operate(fll_output, _pll_output_buffer);
+        if(n != 0){
+            std::complex<double> pll_nco = std::polar(1.0, -_pll_phase);
+            std::complex<double> pll_output = *_pll_output_buffer * pll_nco;
 
-        while(_pll_curr_arm < _n_filts){
-            switch(_pll_state){
-            case BOUNDARY:
-                dx = _pll_deriv_bank[_pll_curr_arm].operate();
-                pll_output = (1.0 - _pll_mu) * x + _pll_mu * dx;
-                _pll_tau += 1.0 / _pll_rate;
-                _pll_theta = _pll_tau * static_cast<double>(_n_filts);
-                _pll_curr_arm = std::floor(_pll_theta);
-                _pll_mu = _pll_theta - _pll_curr_arm;
-                _pll_state = INTERP;
-                n++;
-                break;
-            case INTERP:
-                x = _pll_bank[_pll_curr_arm].operate();
-                if(_pll_curr_arm == _n_filts - 1){
-                    _pll_state = BOUNDARY;
-                    _pll_curr_arm = _n_filts;
-                }
-                else{
-                    x = _pll_bank[_pll_curr_arm + 1].operate();
-                    pll_output = (1.0 - _pll_mu) * x + _pll_mu * dx;
-                    _pll_tau += 1.0 / _pll_rate;
-                    _pll_theta = _pll_tau * static_cast<double>(_n_filts);
-                    _pll_curr_arm = std::floor(_pll_theta);
-                    _pll_mu = _pll_theta - _pll_curr_arm;
-                    n++;       
-                }
-                break;
-            default:
-                return -1;
-            }
-        }
+            _pll_err = _constel->phase_error_detector(pll_output);
+            _pll_err = 0.5 * (std::abs(_pll_err + 1.0) - std::abs(_pll_err - 1.0));
 
-        _pll_tau -= 1.0;
-        _pll_theta -= static_cast<double>(_n_filts);
-        _pll_curr_arm -= _n_filts;
+            _pll_freq += _pll_beta * _pll_err;
+            _pll_phase += _pll_freq + _pll_alpha * _pll_err;
 
-        for(size_t i = 0; i < _n_filts; ++i){
-            _pll_bank[i].increment();
-            _pll_deriv_bank[i].increment();
+            if(_pll_phase > 2.0 * PI) _pll_phase = std::fmod(_pll_phase, 2.0 * PI);
+            if(_pll_phase < -2.0 * PI) _pll_phase = std::fmod(_pll_phase, -2.0 * PI);
+            _pll_freq = _pll_freq > _pll_max_freq ? _pll_max_freq : _pll_freq;
+            _pll_freq = _pll_freq < _pll_min_freq ? _pll_min_freq : _pll_freq;
+            
+            // while(_pll_phase > 2.0 * PI) _pll_phase -= 2.0 * PI;
+            // while(_pll_phase < -2.0 * PI) _pll_phase += 2.0 * PI;
+
+            output[0] = pll_output;
         }
         /*******************/
 
-        double pll_error = (x.real() * dx.real() + x.imag() * dx.imag()) / 2.0;
-        std::cout<<"Error: "<<pll_error<<"\n";
-        return _pll_pfb.operate(fll_output, output);
-
-        // output[0] = pll_output;
+        // output[0] = fll_output;
+        return n;
+        // return -1;
     }
-
-    double* fll_err(){return _fll_err_total;}
-    double* fll_phase(){return _fll_phase_total;}
-    double* fll_freq(){return _fll_freq_total;}
-    double fll_upper(){return _fll_upper_err;}
-    double fll_lower(){return _fll_lower_err;}
 
     void reset(){
         _fll_upperband_filter.reset();
         _fll_lowerband_filter.reset();
-        for(size_t i = 0; i < _n_filts; ++i){
-            _pll_bank[i].reset();
-            _pll_deriv_bank[i].reset();
-        }
+        _pll_pfb.reset();
     }
 
 private:
@@ -708,27 +706,28 @@ private:
         _fll_min_freq = -4.0 * PI / static_cast<double>(_sps);
         _fll_phase = 0.0;
         _fll_freq = 0.0;
-        _fll_err_total = new double[500];
-        _fll_phase_total = new double[500];
-        _fll_freq_total = new double[500];
-        _debug_curr = 0;
-        _fll_upper_err = 0.0;
-        _fll_lower_err = 0.0;
         _fll_size = 55;
+        _fll_err = 0.0;
         set_fll_filter();
     }
 
     void update_pll(){
-        _pll_bank = new eftc<double, std::complex<double>>[_n_filts];
-        _pll_deriv_bank = new eftc<double, std::complex<double>>[_n_filts];
-        _pll_rate = 1.0 / _sps;
-        _pll_curr_arm = _n_filts / 2;
-        _pll_tau = 0.0;
-        _pll_theta = 0.0;
-        _pll_mu = 0.0;
-        _pll_taps_per_arm = std::ceil(_pll_prototype.size() / _n_filts);
-        _pll_state = INTERP;
-        set_pll_filters();
+        _pll_prototype = root_nyquist(_n_filts, _n_filts * _sps, 1.0, _rolloff, 8 * _n_filts * _sps);
+        _pll_pfb.update(1.0 / _sps, _n_filts, _pll_prototype);
+
+        _pll_phase = 0.0;
+        _pll_freq = 0.0;
+        _pll_max_freq = 1.0;
+        _pll_min_freq = -1.0;
+        _pll_damping = std::sqrt(2.0) / 2.0;
+        _pll_alpha = 4.0 * _pll_damping * _loop_bw / (1.0 + 2.0 * _pll_damping * _loop_bw + std::pow(_loop_bw, 2.0));
+        _pll_beta = 4.0 * std::pow(_loop_bw, 2.0) / (1.0 + 2.0 * _pll_damping * _loop_bw + std::pow(_loop_bw, 2.0));
+        _pll_err = 0.0;
+        _pll_output_buffer = new std::complex<double>;
+
+        bank = new eftc<double, std::complex<double>>[_n_filts];
+        d_bank = new eftc<double, std::complex<double>>[_n_filts];
+        set_pll_filter();
     }
 
     void set_fll_filter(){
@@ -758,46 +757,9 @@ private:
         _fll_upperband_filter.update_taps(upper, _fll_size);
     }
 
-    void set_pll_filters(){
-        // Allocate a temporary buffer to hold a zero padded array of the prototype
-        double* temp = new double[_n_filts * _pll_taps_per_arm];
-        std::uninitialized_default_construct_n(temp, _n_filts * _pll_taps_per_arm);
-        std::copy_n(_pll_prototype.data(), _pll_prototype.size(), temp);
-
-        // Create the polyphase bank
-        for(size_t i = 0; i < _n_filts; ++i){
-            double* temp_sub = new double[_pll_taps_per_arm];
-            for(size_t j = 0; j < _pll_taps_per_arm; ++j){
-                temp_sub[j] = temp[i + j * _n_filts];
-            }
-            _pll_bank[i].update_taps(temp_sub, _pll_taps_per_arm);
-        }
-
-        // Generate a derivative of the prototype
-        double differentiator[3] = {-1.0, 0.0, 1.0};
-        double power = 0.0;
-        double* diff_filt = new double[_pll_prototype.size()];
-        for(size_t i = 0; i < _pll_prototype.size() - 2; ++i){
-            double accum = 0.0;
-            for(size_t j = 0; j < 3; ++j){
-                accum += differentiator[j] * _pll_prototype[i + j];
-            }
-            diff_filt[i] = accum;
-            power += std::abs(accum);
-        }
-        diff_filt[_pll_prototype.size() - 1] = 0.0;
-        auto f = [this, power](double& tap){tap *= _n_filts / power;};
-        std::for_each(diff_filt, diff_filt + _pll_prototype.size(), f);
-
-        // Make the derivative polyphase bank
-        std::copy_n(diff_filt, _pll_prototype.size(), temp);
-        for(size_t i = 0; i < _n_filts; ++i){
-            double* temp_sub = new double[_pll_taps_per_arm];
-            for(size_t j = 0; j < _pll_taps_per_arm; ++j){
-                temp_sub[j] = temp[i + j * _n_filts];
-            }
-            _pll_deriv_bank[i].update_taps(temp_sub, _pll_taps_per_arm);
-        }
+    void set_pll_filter(){
+        std::uninitialized_copy_n(_pll_pfb.get_bank(), _n_filts, bank);
+        std::uninitialized_copy_n(_pll_pfb.get_deriv_bank(), _n_filts, d_bank);
     }
 
     /**
