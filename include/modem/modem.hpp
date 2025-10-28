@@ -9,6 +9,8 @@
 #ifndef MODEM_HPP
 #define MODEM_HPP
 
+#define DEBUG
+
 #include <complex>
 #include <memory>
 #include <algorithm>
@@ -515,12 +517,49 @@ public:
 
 };
 
+#ifdef DEBUG
+/**
+ * @brief Contains arrays of all internal loop variables
+ */
+struct DEBUG_INTERFACE{
+    size_t n = 500;
+    size_t curr = 0;
+
+    /* AGC VARIABLES */
+    double AGC_RATE;
+    double AGC_REF;
+    double AGC_GAIN;
+    double AGC_MAX_GAIN;
+
+    double* AGC_GAIN_HIST = new double[n];
+
+    /* FLL VARIABLES */
+    double FLL_DAMPING, FLL_ALPHA, FLL_BETA, FLL_MIN_FREQ, FLL_MAX_FREQ;
+    size_t FLL_PROTO_SIZE;
+
+    double* FLL_ERR_HIST = new double[n];
+    double* FLL_PHASE_HIST = new double[n];
+    double* FLL_FREQ_HIST = new double[n];
+
+    /* PLL VARIABLES */
+    double PLL_DAMPING, PLL_ALPHA, PLL_BETA, PLL_MIN_FREQ, PLL_MAX_FREQ;
+    
+    double* PLL_ERR_HIST = new double[n];
+    double* PLL_PHASE_HIST = new double[n];
+    double* PLL_FREQ_HIST = new double[n];
+};
+#endif
+
 /**
  * @brief Firefighter is a full digital demodulation class incorporating frequency, phase, and symbol recovery loops
  * 
  */
 class firefighter{
 private:
+    #ifdef DEBUG
+    DEBUG_INTERFACE _debug;
+    #endif
+
     size_t _sps; // samples per symbol of the input complex stream
     size_t _n_filts; // number of filters to use for matched filtering
     constellation* _constel; // the constellation to use
@@ -560,23 +599,13 @@ private:
 
     std::vector<double> _pll_prototype;
     resampler<std::complex<double>> _pll_pfb;
+    /***************************/
 
-    // TEST VARIABLES FOR LIQUID DSP IMPLEMENTATION
-    size_t decim_count = 0;
-    bool locked = false;
-    double rate = 0;
-    double del = 0;
-    double tau = 0;
-    double tau_decim = 0;
-    double idx_f = 0;
-    int idx = 0;
-
-    double q = 0;
-    double q_hat = 0;
-
-    eftc<double, std::complex<double>>* bank;
-    eftc<double, std::complex<double>>* d_bank;
-    /****************************/
+    /* DEBUG INTERFACE */
+    double* _pll_err_debug = new double[500];
+    double* _pll_phase_debug = new double[500];
+    double* _pll_freq_debug = new double[500];
+    /*******************/
 
     double sinc(double x){
         if(x > -1e-6 && x < 1e-6) return 1.0;
@@ -616,8 +645,8 @@ public:
     void set_fll_size(size_t size){_fll_size = size; update_fll();}
 
     std::vector<double> get_pll_prototype() const{return _pll_prototype;}
-    eftc<double, std::complex<double>>* get_bank(){return bank;}
-    eftc<double, std::complex<double>>* get_d_bank(){return d_bank;}
+
+    DEBUG_INTERFACE* debug(){return &_debug;}
 
     /**
      * @brief Operate the symbol recovery on one sample.
@@ -631,6 +660,7 @@ public:
         if(_agc_gain > _agc_max_gain){
             _agc_gain = _agc_max_gain;
         }
+        _debug.AGC_GAIN_HIST[_debug.curr] = _agc_gain;
         /*******************/
 
         /* FLL CALCULATIONS - WORKS */
@@ -653,6 +683,10 @@ public:
 
         while(_fll_phase > 2.0 * PI) _fll_phase -= 2.0 * PI;
         while(_fll_phase < -2.0 * PI) _fll_phase += 2.0 * PI;
+
+        _debug.FLL_ERR_HIST[_debug.curr] = _fll_err;
+        _debug.FLL_FREQ_HIST[_debug.curr] = _fll_freq;
+        _debug.FLL_PHASE_HIST[_debug.curr] = _fll_phase;
         /*******************/
 
         /* PLL CALCULATIONS - NOT IMPLEMENTED */
@@ -662,7 +696,7 @@ public:
             std::complex<double> pll_output = *_pll_output_buffer * pll_nco;
 
             _pll_err = _constel->phase_error_detector(pll_output);
-            _pll_err = 0.5 * (std::abs(_pll_err + 1.0) - std::abs(_pll_err - 1.0));
+            // _pll_err = 0.5 * (std::abs(_pll_err + 1.0) - std::abs(_pll_err - 1.0));
 
             _pll_freq += _pll_beta * _pll_err;
             _pll_phase += _pll_freq + _pll_alpha * _pll_err;
@@ -677,8 +711,12 @@ public:
 
             output[0] = pll_output;
         }
+        _debug.PLL_ERR_HIST[_debug.curr] = _pll_err;
+        _debug.PLL_PHASE_HIST[_debug.curr] = _pll_phase;
+        _debug.PLL_FREQ_HIST[_debug.curr] = _pll_freq;
         /*******************/
 
+        _debug.curr = (_debug.curr + 1) % _debug.n;
         // output[0] = fll_output;
         return n;
         // return -1;
@@ -689,6 +727,11 @@ public:
         _fll_lowerband_filter.reset();
         _pll_pfb.reset();
     }
+
+    void set_pll_alpha(double alpha){_pll_alpha = alpha;}
+    void set_pll_beta(double beta){_pll_beta = beta;}
+    void set_max_freq(double max){_pll_max_freq = max;}
+    void set_min_freq(double min){_pll_min_freq = min;}
 
 private:
     void update_agc(){
@@ -717,16 +760,14 @@ private:
 
         _pll_phase = 0.0;
         _pll_freq = 0.0;
-        _pll_max_freq = 1.0;
-        _pll_min_freq = -1.0;
+        _pll_max_freq = 0.5;
+        _pll_min_freq = -1.0 * _pll_max_freq;
         _pll_damping = std::sqrt(2.0) / 2.0;
         _pll_alpha = 4.0 * _pll_damping * _loop_bw / (1.0 + 2.0 * _pll_damping * _loop_bw + std::pow(_loop_bw, 2.0));
         _pll_beta = 4.0 * std::pow(_loop_bw, 2.0) / (1.0 + 2.0 * _pll_damping * _loop_bw + std::pow(_loop_bw, 2.0));
         _pll_err = 0.0;
-        _pll_output_buffer = new std::complex<double>;
+        _pll_output_buffer = new std::complex<double>[_sps];
 
-        bank = new eftc<double, std::complex<double>>[_n_filts];
-        d_bank = new eftc<double, std::complex<double>>[_n_filts];
         set_pll_filter();
     }
 
@@ -758,9 +799,37 @@ private:
     }
 
     void set_pll_filter(){
-        std::uninitialized_copy_n(_pll_pfb.get_bank(), _n_filts, bank);
-        std::uninitialized_copy_n(_pll_pfb.get_deriv_bank(), _n_filts, d_bank);
     }
+
+    #ifdef DEBUG
+    void setup_debug(){
+        _debug.AGC_GAIN = _agc_gain;
+        _debug.AGC_MAX_GAIN = _agc_max_gain;
+        _debug.AGC_RATE = _agc_rate;
+        _debug.AGC_REF = _agc_ref;
+
+        _debug.FLL_DAMPING = _fll_damping;
+        _debug.FLL_ALPHA = _fll_alpha;
+        _debug.FLL_BETA = _fll_beta;
+        _debug.FLL_PROTO_SIZE = _fll_size;
+        _debug.FLL_MIN_FREQ = _fll_min_freq;
+        _debug.FLL_MAX_FREQ = _fll_max_freq;
+
+        _debug.PLL_DAMPING = _pll_damping;
+        _debug.PLL_ALPHA = _pll_alpha;
+        _debug.PLL_BETA = _pll_beta;
+        _debug.PLL_MIN_FREQ = _pll_min_freq;
+        _debug.PLL_MAX_FREQ = _pll_max_freq;
+
+        std::uninitialized_default_construct_n(_debug.AGC_GAIN_HIST, _debug.n);
+        std::uninitialized_default_construct_n(_debug.FLL_ERR_HIST, _debug.n);
+        std::uninitialized_default_construct_n(_debug.FLL_FREQ_HIST, _debug.n);
+        std::uninitialized_default_construct_n(_debug.FLL_PHASE_HIST, _debug.n);
+        std::uninitialized_default_construct_n(_debug.PLL_ERR_HIST, _debug.n);
+        std::uninitialized_default_construct_n(_debug.PLL_FREQ_HIST, _debug.n);
+        std::uninitialized_default_construct_n(_debug.PLL_PHASE_HIST, _debug.n);
+    }
+    #endif
 
     /**
      * @brief Update all internal parameters of the recovery because of updated parameters
@@ -770,6 +839,9 @@ private:
         update_agc(); // initialize the AGC section
         update_pll(); // initialize the pll and its polyphase bank
         reset(); // reset internal states for filters
+        #ifdef DEBUG
+        setup_debug();
+        #endif
     }
 };
 

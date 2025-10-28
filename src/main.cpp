@@ -30,16 +30,19 @@
 
 int main(){
     using cpx = std::complex<double>;
-    size_t sps = 8;
+    size_t sps = 4;
     size_t n_filt = 32;
     size_t points = 250;
     size_t N = sps * points;
 
     static float v = 0.0f;
     static float offset = 0.0f;
-    static int arm = 0;
 
-    constellation_qpsk constel{};
+    static float alpha = 0.71419;
+    static float beta = 0.83998;
+    static float max_freq = 0.13;
+
+    constellation_bpsk constel{};
     noise<double> sig_gen{};
     channel_model channel(offset, v);
     rectangular_modulator modulator(&constel, sps, n_filt, 0.35);
@@ -47,23 +50,26 @@ int main(){
     cpx* data = new cpx[N];
     cpx* data_c = new cpx[N];
 
-    auto bank = recovery.get_bank();
-    auto dbank = recovery.get_d_bank();
+    unsigned int* pattern = new unsigned int[points];
 
-    for(size_t i = 0; i < points; ++i){
-        auto point = sig_gen.random_int_range(0, constel.get_size() - 1);
+    for(unsigned int i = 0; i < points; ++i){
+        auto point = i % (constel.get_size());
         modulator.operate(point, data + i * sps);
+        pattern[i] = point;
     }
-
     double* data_fft = new double[N];
     double* data_freq = new double[N];
 
-    cpx* buffer = new cpx;
-    cpx* output = new cpx[points];
-    double* output_fft = new double[points];
-    double* output_freq = new double[points];
-    double* real = new double[points];
-    double* imag = new double[points];
+    cpx* buffer = new cpx[sps];
+    cpx* output = new cpx[N];
+    double* output_fft = new double[N];
+    double* output_freq = new double[N];
+    double* real = new double[N];
+    double* imag = new double[N];
+
+    unsigned int* out_pattern = new unsigned int[N];
+
+    DEBUG_INTERFACE* interf = recovery.debug();
 
 #if DO_WINDOW
     GLFWwindow* window = glfw_makeNewWindow(1920, 1080, "Yet Another DSP Library", true, true, true);
@@ -88,46 +94,71 @@ int main(){
             }
             compute_psd(data_c, N, data_fft, data_freq);
 
-            size_t j = 0;
+            size_t k = 0;
             for(size_t i = 0; i < N; ++i){
-                if(recovery.operate(data_c[i], buffer) != 0){
-                    output[j] = *buffer;
-                    j++;
-                } 
+                // recovery.operate(data_c[i], output + i);
+                size_t n = recovery.operate(data_c[i], buffer);
+                for(size_t j = 0; j < n; ++j){
+                    output[k] = buffer[j];
+                    out_pattern[k] = constel.decision(output[k]);
+                    k++;
+                }
             }
-            compute_psd(output, points, output_fft, output_freq);
+            compute_psd(output, N, output_fft, output_freq);
 
-            for(size_t i = 0; i < points; ++i){
+            for(size_t i = 0; i < N; ++i){
                 real[i] = output[i].real();
                 imag[i] = output[i].imag();
             }
 
             ImGui::SliderFloat("Frequency Offset", &offset, 0.0, 1.0);
             ImGui::SliderFloat("Noise Voltage", &v, 0.0, 1e-1, "%.5f");
+            ImGui::SliderFloat("Loop Alpha", &alpha, 0.0, 1.0, "%.5f");
+            ImGui::SliderFloat("Loop Beta", &beta, 0.0, 1.0, "%.5f");
+            ImGui::SliderFloat("Frequency Range", &max_freq, 0.0, 1.0, "%.5f");
             channel.set_noise(v);
             channel.set_offset(offset);
+            recovery.set_pll_alpha(alpha);
+            recovery.set_pll_beta(beta);
+            recovery.set_max_freq(max_freq);
+            recovery.set_min_freq(-max_freq);
 
-            if(ImPlot::BeginPlot("Plot 0", ImVec2(-1, 750))){
+            if(ImPlot::BeginSubplots("Data", 1, 2, ImVec2(-1, 750))){
+            if(ImPlot::BeginPlot("Spectrum")){
                 ImPlot::SetupAxesLimits(-0.5, 0.5, -30, 5);
                 ImPlot::PlotLine("Input", data_freq, data_fft, N);
-                ImPlot::PlotLine("Output", output_freq, output_fft, points);
+                ImPlot::PlotLine("Output", output_freq, output_fft, N);
                 ImPlot::EndPlot();
             }
-            if(ImPlot::BeginPlot("Plot 1", ImVec2(-1, 750))){
+            if(ImPlot::BeginPlot("Time Data")){
+                ImPlot::PlotLine("Input", pattern, points);
+                ImPlot::PlotLine("Output", out_pattern, points);
+                ImPlot::EndPlot();
+            }
+            ImPlot::EndSubplots();
+            }
+            if(ImPlot::BeginSubplots("Debug", 1, 2, ImVec2(-1, 750))){
+            if(ImPlot::BeginPlot("Constellation")){
                 ImPlot::SetupAxesLimits(-2, 2, -2, 2);
                 ImPlot::PlotScatter("", real, imag, N);
                 ImPlot::EndPlot();
             }
+            if(ImPlot::BeginPlot("Errors")){
+                ImPlot::SetupAxesLimits(0, interf->n, -2, 2);
+                ImPlot::PlotLine("PLL Error", interf->PLL_ERR_HIST, interf->n);
+                ImPlot::PlotLine("PLL Phase", interf->PLL_PHASE_HIST, interf->n);
+                ImPlot::PlotLine("PLL Frequency", interf->PLL_FREQ_HIST, interf->n);
+                ImPlot::EndPlot();
+            }
+            ImPlot::EndSubplots();
+            }
             ImGui::EndTabItem();
         }
         if(ImGui::BeginTabItem("Items 1")){
-            ImGui::SliderInt("Arm", &arm, 0, 31);
             if(ImPlot::BeginPlot("Plot 0", ImVec2(-1, 750))){
-                ImPlot::PlotBars("", bank[arm].get_taps(), bank[arm].get_num_taps());
                 ImPlot::EndPlot();
             }
             if(ImPlot::BeginPlot("Plot 1", ImVec2(-1, 750))){
-                ImPlot::PlotBars("", dbank[arm].get_taps(), dbank[arm].get_num_taps());
                 ImPlot::EndPlot();
             }
             ImGui::EndTabItem();
