@@ -22,12 +22,12 @@ class PacketFormer {
     /**
     * @brief The address of the sender
     */
-    const uint32_t senderAddress;
+    const uint8_t senderAddress;
 
     /**
     * @brief The address of the reciever
     */
-    const uint32_t recieverAddress;
+    const uint8_t recieverAddress;
 
     /**
      * @brief A pointer to the crc generator

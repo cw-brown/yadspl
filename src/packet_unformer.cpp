@@ -4,12 +4,36 @@
 
 PacketUnformer::PacketUnformer(
     std::vector<bool> * in_data_buffer,
-    std::vector<uint8_t> *  out_data_buffer) : 
+    std::vector<uint8_t> *  out_data_buffer,
+    uint8_t sender_address,
+    uint8_t reciever_address,
+    bool are_we_source) : 
     inDataBuffer(in_data_buffer),
-    outDataBuffer(out_data_buffer) {
+    outDataBuffer(out_data_buffer),
+    senderAddress(sender_address),
+    recieverAddress(reciever_address),
+    areWeSource(are_we_source) {
 
     // Make crc generator with polynomial for ISO 3309 in reversed format
     crcGenny = crcutil_interface::CRC::Create(0xEDB88320, 0, 32, true, 0, 0, 0, true, NULL);
+
+}
+
+bool PacketUnformer::getAreWeSource() {
+
+    return areWeSource;
+
+}
+
+void PacketUnformer::setAreWeSource(bool are_we_source) {
+
+    areWeSource = are_we_source;
+    
+}
+
+std::vector<bool>::iterator PacketUnformer::getInputPosition() {
+
+    return inputPos;
 
 }
 
@@ -19,22 +43,29 @@ uint8_t PacketUnformer::formPacket() {
     uint8_t tempFlag;
     uint8_t tempLen;
     bool noFlag;
-    std::vector<bool>::iterator inputPos;
     SimpPacket tempPacket;
     uint8_t tempByte;
+    uint8_t tempRecAddress;
+    uint8_t tempSendAddress;
+    std::vector<bool>::iterator endPos;
 
     // CRC
     crcutil_interface::UINT64 tempCRC;
     uint32_t erc;
 
-    // Clear temporary packet
+    // Clear temporary packet and other data
     (tempPacket.data).clear();
     tempPacket.controlCode = 0;
     tempPacket.dataLength = 0;
-    tempPacket.recieverAddress = 0;
-    tempPacket.senderAddress = 0;
     tempPacket.sequenceNumber = 0;
     tempPacket.erc = false;
+
+    tempFlag = 0;
+    tempLen = 0;
+    noFlag = true;
+    tempByte = 0;
+    tempRecAddress = 0;
+    tempSendAddress = 0;
 
     // Setup
     noFlag = true;
@@ -46,7 +77,9 @@ uint8_t PacketUnformer::formPacket() {
         // Check Buffer has enough data for flag (8 bits)
         if(std::distance(inputPos, inDataBuffer->end()) <= 8) {
 
+            inputPos = inDataBuffer->begin();
             return 0;
+
         }
 
         // First read potential flag field
@@ -65,16 +98,20 @@ uint8_t PacketUnformer::formPacket() {
 
     }
 
-    // Move pointer to one bit past end of flag field
-    inputPos += 7;
+    // Pointer currently one bit into flag
 
     // Check for second flag
 
-    // Check Buffer has enough data for length field (8 bits)
-    if(std::distance(inputPos, inDataBuffer->end()) <= 8) {
+    // Check Buffer has enough data for length field (8 bits for control + 7 bits for rest of flag)
+    if(std::distance(inputPos + 7, inDataBuffer->end()) <= 8) {
 
+        inputPos = inDataBuffer->begin();
         return 0;
+        
     }
+
+    // Move pointer to one bit past end of flag field
+    inputPos += 7;
 
     // Read potential len field: inputPos one bit after flag, need to check 4 forward for length
     tempLen = 0;
@@ -89,10 +126,12 @@ uint8_t PacketUnformer::formPacket() {
     // Check that enough data is present in buffer
     if(std::distance(inputPos, inDataBuffer->end()) < 4 + 4 + 16 + 8 + 8*tempLen + 32 + 8) {
 
+        inputPos = inDataBuffer->begin();
         return 0;
         
     }
-    
+
+    // We now know enough data in buffer, inputPos one bit after flag
 
     // Read potential flag field
     tempFlag = 0;
@@ -104,12 +143,18 @@ uint8_t PacketUnformer::formPacket() {
 
     if(tempFlag != 0b01111110) {
 
+        // At a minimum, our first flag is wrong, so erase to there from buffer
+        inDataBuffer->erase(inDataBuffer->begin(), inputPos - 1);
         return 1;
 
     }
 
     // Now we have verified that both flags are good, so it is time to make the SimpPacket
     // We know that the packet is the correct length, no more need to check size
+
+    // Let us store position of end of packet for later - we know all packets are 'valid' now, so we should erase to end of packet +1 from now on
+    // input pos still one bit after flag
+    endPos = inputPos + 4 + 4 + 8 + 8 + 8 + 8*tempLen + 32 + 8;
 
     // Read Control
     for(int i = 0; i < 4; i++) {
@@ -119,30 +164,44 @@ uint8_t PacketUnformer::formPacket() {
 
     }
 
-    // Read Data Length
-    for(int i = 0; i < 4; i++) {
-
-        tempPacket.dataLength += ((*inputPos) << (3 - i));
-        inputPos++;
-
-    }
+    // Read Data Length - except we alread did, it is tempLen
+    tempPacket.dataLength = tempLen;
+    inputPos += 4;
 
     // Read Addresses
 
     // Reciever
     for(int i = 0; i < 8; i++) {
 
-        tempPacket.recieverAddress += ((*inputPos) << (8 - i));
-        inputPos++;
+       tempRecAddress += ((*inputPos) << (8 - i));
+       inputPos++;
+
+    }
+
+    // Check if our address, return appropriate value if not
+    if(tempRecAddress != recieverAddress) {
+
+        inputPos = endPos;
+        inDataBuffer->erase(inDataBuffer->begin(), endPos);
+        return 2;
 
     }
 
     // Sender
+
     for(int i = 0; i < 8; i++) {
 
-        tempPacket.senderAddress += ((*inputPos) << (8 - i));
+        tempSendAddress += ((*inputPos) << (8 - i));
         inputPos++;
 
+    }
+
+    // Check if sender we expect, return appropriate value if not
+    if(tempSendAddress != senderAddress) {
+
+        inputPos = endPos;
+        inDataBuffer->erase(inDataBuffer->begin(), endPos);
+        return 3;
     }
 
     // Read Sequence Number
@@ -171,29 +230,48 @@ uint8_t PacketUnformer::formPacket() {
 
     }
 
-    // Read Checksum
-    erc = 0;
-    for(int j = 0; j < 32; j++) {
+    // If data length isn't zero, check checksum
+    if(tempPacket.dataLength != 0) {
 
-        erc += ((*inputPos) << (32 - j));
-        inputPos++;
+        // Read Checksum if data length != 0
+        erc = 0;
+        for(int j = 0; j < 32; j++) {
+
+            erc += ((*inputPos) << (32 - j));
+            inputPos++;
+
+        }
+
+        // Calculate Checksum
+        crcGenny->Compute(tempPacket.data.data(), tempPacket.dataLength, &tempCRC, NULL);
+        
+        // See if calculated and sent checksum match
+        tempPacket.erc = (erc == (uint32_t)tempCRC);
+
+    } else { // Otherwise act like good checksum, move pointer past checksum field
+
+        tempPacket.erc = true;
+        inputPos += 32;
 
     }
 
-    // Calculate Checksum
-    crcGenny->Compute(tempPacket.data.data(), tempPacket.dataLength, &tempCRC, NULL);
-    
-    // See if calculated and sent checksum match
-    tempPacket.erc = (erc == (uint32_t)tempCRC);
+    // Move pointer past flag
+    inputPos += 8;
 
-    // Return appropriate value if bad checksum, else return appropriate value for good checksum
+    // Put to appropriate buffer
+    
+    // Clear the input data buffer to appropriate point
+    inputPos = endPos;    
+    inDataBuffer->erase(inDataBuffer->begin(), endPos);
+
+    // Return appropriate value for good checksum else return value for bad checksum
     if(!tempPacket.erc) {
 
-        return 2;
+        return 255;
 
     } else {
 
-        return 255;
+        return 254;
         
     }
 

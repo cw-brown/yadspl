@@ -26,16 +26,6 @@ struct SimpPacket {
      */
     uint8_t dataLength;
 
-    /**
-     * @brief The address of the sender of this packet
-     */
-    uint8_t recieverAddress;
-
-    /**
-     * @brief The address of the sender of this packet
-     */
-    uint8_t senderAddress;
-
 
     /**
      * @brief The sequence number of the current packet
