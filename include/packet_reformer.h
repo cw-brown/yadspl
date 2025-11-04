@@ -1,12 +1,12 @@
 /**
- * @file unpacketer.h
+ * @file packet_reformer.h
  * @author Riley Kitchenka (https://github.com/DrGrandmaster)
- * @brief Defines a class for unforming SCHP5 packets
+ * @brief Defines a class forreforming SCHP5 packets
  * @version 0.1
  * @date 2025-10-23
  */
-# ifndef PACKET_UNFORMER_H
-# define PACKET_UNFORMER_H
+# ifndef PACKET_REFORMER_H
+# define PACKET_REFORMER_H
 
 # include "simple_packet.h"
 # include "crcinterface.h"
@@ -14,9 +14,9 @@
 # include <queue>
 
 /** 
- * @brief Processes recieved SCHP5 protocol packets to raw bitstream
+ * @brief Processes recieved SCHP5 protocol bitstream to packets
  */
-class PacketUnformer {
+class PacketReformer {
 
     private:
 
@@ -43,12 +43,12 @@ class PacketUnformer {
     /**
      * @brief A buffer to store control packets
      */
-    std::vector<SimpPacket> controlPacketBuffer;
+    std::vector<SimpPacket> * controlPacketBuffer;
 
     /**
      * @brief A buffer to store the current transaction's data packets
      */
-    std::vector<SimpPacket> dataPacketBuffer;
+    std::vector<SimpPacket> * dataPacketBuffer;
     
     /**
      * @brief The current processing position in the input data buffer
@@ -63,19 +63,27 @@ class PacketUnformer {
     std::vector<bool> * inDataBuffer;
 
     /**
-     * @brief The buffer of data extracted from the packets
+     * @brief Construct a new packet reformer
      */
-    std::vector<uint8_t> *  outDataBuffer;
-
-    /**
-     * @brief Construct a new packet unformer
-     */
-    PacketUnformer(
+    PacketReformer(
         std::vector<bool> * in_data_buffer,
-        std::vector<uint8_t> *  out_data_buffer,
+        std::vector<SimpPacket> * control_packet_buffer,
+        std::vector<SimpPacket> * data_packet_buffer,
         uint8_t sender_address,
         uint8_t reciever_address,
         bool are_we_source);
+
+    /**
+     * @brief Tells if we are currently the source of data
+     * @returns the current value of areWeSource
+     */
+    bool getAreWeSource();
+
+    /**
+     * @brief Sets whether we are curretly the source of data
+     * @param are_we_source Whether we should be set as the source of data
+     */
+    void setAreWeSource(bool are_we_source);
 
     /**
      * @brief Gets the current processing position in the input data buffer
@@ -92,7 +100,7 @@ class PacketUnformer {
     /**
      * @brief Processes packet in general buffer to either control or data packet buffers
      */
-    void sortPacket();
+    void sortPacket(SimpPacket to_sort);
     
 };
 

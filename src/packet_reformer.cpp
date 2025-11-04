@@ -1,15 +1,15 @@
-#include "packet_unformer.h"
+#include "packet_reformer.h"
 #include "crcinterface.h"
 #include <bit>
 
-PacketUnformer::PacketUnformer(
+PacketReformer::PacketReformer(
     std::vector<bool> * in_data_buffer,
-    std::vector<uint8_t> *  out_data_buffer,
+    std::vector<SimpPacket> * control_packet_buffer,
+    std::vector<SimpPacket> * data_packet_buffer,
     uint8_t sender_address,
     uint8_t reciever_address,
     bool are_we_source) : 
     inDataBuffer(in_data_buffer),
-    outDataBuffer(out_data_buffer),
     senderAddress(sender_address),
     recieverAddress(reciever_address),
     areWeSource(are_we_source) {
@@ -19,25 +19,25 @@ PacketUnformer::PacketUnformer(
 
 }
 
-bool PacketUnformer::getAreWeSource() {
+bool PacketReformer::getAreWeSource() {
 
     return areWeSource;
 
 }
 
-void PacketUnformer::setAreWeSource(bool are_we_source) {
+void PacketReformer::setAreWeSource(bool are_we_source) {
 
     areWeSource = are_we_source;
     
 }
 
-std::vector<bool>::iterator PacketUnformer::getInputPosition() {
+std::vector<bool>::iterator PacketReformer::getInputPosition() {
 
     return inputPos;
 
 }
 
-uint8_t PacketUnformer::formPacket() {
+uint8_t PacketReformer::formPacket() {
 
     // Temp data storage
     uint8_t tempFlag;
@@ -259,6 +259,7 @@ uint8_t PacketUnformer::formPacket() {
     inputPos += 8;
 
     // Put to appropriate buffer
+    sortPacket(tempPacket);
     
     // Clear the input data buffer to appropriate point
     inputPos = endPos;    
@@ -273,6 +274,21 @@ uint8_t PacketUnformer::formPacket() {
 
         return 254;
         
+    }
+
+}
+
+void PacketReformer::sortPacket(SimpPacket to_sort) {
+
+    // If we are sink and code 0000, then data packet, else control
+    if((to_sort.controlCode == 0b0000) && !getAreWeSource()) {
+
+        dataPacketBuffer->push_back(to_sort);
+
+    } else {
+
+        controlPacketBuffer->push_back(to_sort);
+
     }
 
 }
