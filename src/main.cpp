@@ -30,7 +30,7 @@
 
 int main(){
     using cpx = std::complex<double>;
-    size_t sps = 4;
+    size_t sps = 2;
     size_t n_filt = 32;
     size_t points = 250;
     size_t N = sps * points;
@@ -38,11 +38,11 @@ int main(){
     static float v = 0.0f;
     static float offset = 0.0f;
 
-    static float alpha = 0.71419;
-    static float beta = 0.83998;
-    static float max_freq = 0.13;
+    // static float alpha = 0.71419;
+    // static float beta = 0.83998;
+    // static float max_freq = 0.13;
 
-    constellation_bpsk constel{};
+    constellation_qpsk constel{};
     noise<double> sig_gen{};
     channel_model channel(offset, v);
     rectangular_modulator modulator(&constel, sps, n_filt, 0.35);
@@ -52,13 +52,18 @@ int main(){
 
     unsigned int* pattern = new unsigned int[points];
 
+    static int symb_delay = recovery.get_sample_delay() + sps;
+
     for(unsigned int i = 0; i < points; ++i){
-        auto point = i % (constel.get_size());
+        // auto point = (i * i * 2) % (constel.get_size());
+        auto point = sig_gen.random_int_range(0, constel.get_size() - 1);
         modulator.operate(point, data + i * sps);
         pattern[i] = point;
     }
     double* data_fft = new double[N];
     double* data_freq = new double[N];
+
+    compute_psd(data, N, data_fft, data_freq);
 
     cpx* buffer = new cpx[sps];
     cpx* output = new cpx[N];
@@ -70,6 +75,9 @@ int main(){
     unsigned int* out_pattern = new unsigned int[N];
 
     DEBUG_INTERFACE* interf = recovery.debug();
+
+    std::cout<<recovery.get_sample_delay();
+
 
 #if DO_WINDOW
     GLFWwindow* window = glfw_makeNewWindow(1920, 1080, "Yet Another DSP Library", true, true, true);
@@ -111,17 +119,20 @@ int main(){
                 imag[i] = output[i].imag();
             }
 
+            recovery.reset();
+
             ImGui::SliderFloat("Frequency Offset", &offset, 0.0, 1.0);
             ImGui::SliderFloat("Noise Voltage", &v, 0.0, 1e-1, "%.5f");
-            ImGui::SliderFloat("Loop Alpha", &alpha, 0.0, 1.0, "%.5f");
-            ImGui::SliderFloat("Loop Beta", &beta, 0.0, 1.0, "%.5f");
-            ImGui::SliderFloat("Frequency Range", &max_freq, 0.0, 1.0, "%.5f");
+            ImGui::SliderInt("Sample Delay", &symb_delay, 0, 100);
+            // ImGui::SliderFloat("Loop Alpha", &alpha, 0.0, 1.0, "%.5f");
+            // ImGui::SliderFloat("Loop Beta", &beta, 0.0, 1.0, "%.5f");
+            // ImGui::SliderFloat("Frequency Range", &max_freq, 0.0, 1.0, "%.5f");
             channel.set_noise(v);
             channel.set_offset(offset);
-            recovery.set_pll_alpha(alpha);
-            recovery.set_pll_beta(beta);
-            recovery.set_max_freq(max_freq);
-            recovery.set_min_freq(-max_freq);
+            // recovery.set_pll_alpha(alpha);
+            // recovery.set_pll_beta(beta);
+            // recovery.set_max_freq(max_freq);
+            // recovery.set_min_freq(-max_freq);
 
             if(ImPlot::BeginSubplots("Data", 1, 2, ImVec2(-1, 750))){
             if(ImPlot::BeginPlot("Spectrum")){
@@ -132,7 +143,7 @@ int main(){
             }
             if(ImPlot::BeginPlot("Time Data")){
                 ImPlot::PlotLine("Input", pattern, points);
-                ImPlot::PlotLine("Output", out_pattern, points);
+                ImPlot::PlotLine("Output", out_pattern + symb_delay, points - symb_delay);
                 ImPlot::EndPlot();
             }
             ImPlot::EndSubplots();
@@ -140,7 +151,7 @@ int main(){
             if(ImPlot::BeginSubplots("Debug", 1, 2, ImVec2(-1, 750))){
             if(ImPlot::BeginPlot("Constellation")){
                 ImPlot::SetupAxesLimits(-2, 2, -2, 2);
-                ImPlot::PlotScatter("", real, imag, N);
+                ImPlot::PlotScatter("", real + symb_delay, imag + symb_delay, N - symb_delay);
                 ImPlot::EndPlot();
             }
             if(ImPlot::BeginPlot("Errors")){

@@ -403,6 +403,7 @@ public:
     double get_rate() const{return _rate;}
     size_t get_num_filters() const{return _n_filts;}
     size_t get_taps_per_arm() const{return _taps_per_filter;}
+    size_t get_sample_delay() const{return _taps_per_filter;}
 
     /**
      * @brief Operate the resampler on a sample value
@@ -636,6 +637,7 @@ public:
     size_t get_fll_size() const{return _fll_size;}
     eftc<std::complex<double>, std::complex<double>> get_fll_lower_band() const{return _fll_lowerband_filter;}
     eftc<std::complex<double>, std::complex<double>> get_fll_upper_band() const{return _fll_upperband_filter;}
+    size_t get_sample_delay() const{return _pll_pfb.get_sample_delay();}
 
     void set_sps(size_t sps){_sps = sps; update_internals();}
     void set_num_filters(size_t n){_n_filts = n; update_internals();}
@@ -676,20 +678,20 @@ public:
         _fll_phase += _fll_freq;
         
         // Wrap around
-        // if(_fll_phase > 2.0 * PI) _fll_phase = std::fmod(_fll_phase, 2.0 * PI);
-        // if(_fll_phase < -2.0 * PI) _fll_phase = std::fmod(_fll_phase, -2.0 * PI);
+        if(_fll_phase > 2.0 * PI) _fll_phase = std::fmod(_fll_phase, 2.0 * PI);
+        if(_fll_phase < -2.0 * PI) _fll_phase = std::fmod(_fll_phase, -2.0 * PI);
         _fll_freq = _fll_freq > _fll_max_freq ? _fll_max_freq : _fll_freq;
         _fll_freq = _fll_freq < _fll_min_freq ? _fll_min_freq : _fll_freq;
 
-        while(_fll_phase > 2.0 * PI) _fll_phase -= 2.0 * PI;
-        while(_fll_phase < -2.0 * PI) _fll_phase += 2.0 * PI;
+        // while(_fll_phase > 2.0 * PI) _fll_phase -= 2.0 * PI;
+        // while(_fll_phase < -2.0 * PI) _fll_phase += 2.0 * PI;
 
         _debug.FLL_ERR_HIST[_debug.curr] = _fll_err;
         _debug.FLL_FREQ_HIST[_debug.curr] = _fll_freq;
         _debug.FLL_PHASE_HIST[_debug.curr] = _fll_phase;
         /*******************/
 
-        /* PLL CALCULATIONS - NOT IMPLEMENTED */
+        /* PLL CALCULATIONS - IMPLEMENTED */
         int n = _pll_pfb.operate(fll_output, _pll_output_buffer);
         if(n != 0){
             std::complex<double> pll_nco = std::polar(1.0, -_pll_phase);
@@ -763,6 +765,7 @@ private:
         _pll_max_freq = 0.5;
         _pll_min_freq = -1.0 * _pll_max_freq;
         _pll_damping = std::sqrt(2.0) / 2.0;
+        // _pll_damping = 2.0 * _n_filts;
         _pll_alpha = 4.0 * _pll_damping * _loop_bw / (1.0 + 2.0 * _pll_damping * _loop_bw + std::pow(_loop_bw, 2.0));
         _pll_beta = 4.0 * std::pow(_loop_bw, 2.0) / (1.0 + 2.0 * _pll_damping * _loop_bw + std::pow(_loop_bw, 2.0));
         _pll_err = 0.0;
@@ -844,5 +847,59 @@ private:
         #endif
     }
 };
+
+class fir_decimator{
+private:
+
+public:
+
+
+};
+
+class fir_interpolator{
+private:
+    size_t _P; // primitive interpolation
+    size_t _Q; // primitive decimation
+
+    eftc<double, std::complex<double>>* _bank;
+    eftc<double, std::complex<double>>* _deriv;
+public:
+    fir_interpolator(size_t interp, size_t decim, double beta){
+        _P = interp;
+        _Q = decim;
+        double rate = static_cast<double>(_P) / static_cast<double>(_Q);
+        auto prot = root_nyquist(32, 32.0 * rate, 1.0, beta, 8 * rate * 32);
+        resampler<std::complex<double>> resamp(_P / _Q, 32, prot);
+        _bank = new eftc<double, std::complex<double>>[32];
+        _deriv = new eftc<double, std::complex<double>>[32];
+
+        for(size_t i = 0; i < 32; ++i){
+            _bank[i].update_taps(resamp.get_bank()[i].get_taps(), resamp.get_bank()[i].get_num_taps());
+            _deriv[i].update_taps(resamp.get_deriv_bank()[i].get_taps(), resamp.get_deriv_bank()[i].get_num_taps());
+        }
+    }
+
+    void operate(std::complex<double>& sample, std::complex<double>* output){
+        size_t index = 0;
+        size_t n = 0;
+        for(size_t i = 0; i < _Q; ++i){
+            for(size_t j = 0; j < 32; ++j){
+                _bank[j].feed_sample(sample);
+                _deriv[j].feed_sample(sample);
+            }
+
+            while(index < _P){
+                output[n] = _bank[index].operate();
+                n++;
+                index += _Q;
+                std::cout<<"Placed 1 sample, n = "<<n<<"\n";
+            }
+
+            index -= _P;
+        }
+    }
+
+};
+
 
 #endif
