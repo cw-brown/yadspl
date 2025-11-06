@@ -13,13 +13,5 @@
                 "CMAKE_BUILD_TYPE": "Debug"
             }
         }
-    ],
-    "buildPresets": [
-        {
-            "name": "debug-multi",
-            "configurePreset": "debug",
-            "description": "Build with threads",
-            "jobs": 0
-        }
     ]
 }

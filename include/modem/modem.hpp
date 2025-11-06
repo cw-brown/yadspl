@@ -19,6 +19,7 @@
 #include <numbers>
 #include <numeric>
 #include <cmath>
+#include <bitset>
 
 #include "constellations.hpp"
 
@@ -477,6 +478,7 @@ private:
     constellation* _constel; // rectangular constellation to use
     size_t _bits_per_symbol; // number of bits per symbol, determines input buffer length
     size_t _sps; // samples per symbol
+    size_t _n_filts;
     size_t _n_points; // number of points in the constellation
     double _rolloff; // matched filter rolloff alpha
 
@@ -492,7 +494,8 @@ public:
      * @param sps samples per symbol to use
      */
     rectangular_modulator(constellation* constellation, size_t sps, size_t num_filters, double rolloff)
-        : _constel(constellation), _bits_per_symbol(_constel->get_bps()), _sps(sps), _n_points(constellation->get_size()), _rolloff(rolloff)
+        : _constel(constellation), _bits_per_symbol(_constel->get_bps()), _sps(sps), _n_filts(num_filters)
+        ,_n_points(constellation->get_size()), _rolloff(rolloff)
         , _prototype(root_nyquist(num_filters, num_filters, 1.0, _rolloff, 8 * _sps * num_filters))
         , _pfb(_sps, num_filters, _prototype){
     }
@@ -503,17 +506,33 @@ public:
     std::vector<double> get_prototype() const{return _prototype;}
     resampler<std::complex<double>> get_resampler() const{return _pfb;}
 
+    void set_constellation(constellation* constel){_constel = constel; update_internals();}
+    void set_sps(size_t sps){_sps = sps; update_internals();}
+    void set_num_filters(size_t n){_n_filts = n; update_internals();}
+    void set_rolloff(double alpha){_rolloff = alpha; update_internals();}
+
     /**
      * @brief Generate sps symbols per bps bits
      * @param input an integer representing an index into the constellation
      * @param output buffer to hold complex symbols, must be at least length sps
      * @return int number of symbols placed into the output buffer
      */
-    int operate(unsigned int input, std::complex<double>* output){
+    int operate(size_t input, std::complex<double>* output){
         if(input >= _n_points) throw std::out_of_range("MERM operate: input sample is out of range");
         auto point = _constel->get_point(input);
         int n = _pfb.operate(point, output);
         return n;
+    }
+
+    void reset(){
+        _pfb.reset();
+    }
+
+    void update_internals(){
+        _prototype.clear();
+        _prototype = root_nyquist(_n_filts, _n_filts, 1.0, _rolloff, 8 * _sps * _n_filts);
+        _pfb.update(_sps, _n_filts, _prototype);
+        reset();
     }
 
 };
@@ -561,6 +580,13 @@ private:
     DEBUG_INTERFACE _debug;
     #endif
 
+    enum RECOVERY_STATE{
+        WAIT, // waiting for a packet
+        PREAMBLE, // Recovering a preamble
+        RECOVER, // actually recovering
+        RESET
+    } _state;
+
     size_t _sps; // samples per symbol of the input complex stream
     size_t _n_filts; // number of filters to use for matched filtering
     constellation* _constel; // the constellation to use
@@ -589,6 +615,20 @@ private:
     eftc<std::complex<double>, std::complex<double>> _fll_upperband_filter;
     /********************************/
 
+    /* PREAMBLE ESTIMATION VARIABLES */
+    std::complex<double>* _pev_sync_words;
+    size_t* _pev_preamble;
+    size_t _pev_preamble_size;
+    size_t _pev_mark_delay, _pev_old_mark_delay;
+    double _pev_threshold, _pev_old_threshold;
+    double _pev_pfa;
+
+    rectangular_modulator* _pev_mod;
+
+    std::complex<double>* _pev_correlation;
+    eftc<std::complex<double>, std::complex<double>> _pev_filter;
+    /********************************/
+
     /* PHASE RECOVERY VARIABLES */
     double _pll_phase, _pll_freq;
     double _pll_max_freq, _pll_min_freq;
@@ -597,21 +637,6 @@ private:
 
     double _pll_err;
     std::complex<double>* _pll_output_buffer;
-
-    eftc<double, std::complex<double>>* _pll_bank;
-    eftc<double, std::complex<double>>* _pll_deriv;
-    std::complex<double> mf, dmf;
-    double rate, del, tau, tau_decim, bf;
-    double rate_adjustment;
-    size_t b, decim_counter;
-    double q, qhat, qhatprev;
-
-    // prototype iir filter stuff
-    double x[3] = {0.0, 0.0, 0.0};
-    double y[2] = {0.0, 0.0};
-
-    double B[3] = {0.22 * 0.01, 0.0, 0.0};
-    double A[3] = {1.0 - 0.5 * (1.0 - 0.01), -0.495* (1.0 - 0.01), 0.0};
 
     std::vector<double> _pll_prototype;
     resampler<std::complex<double>> _pll_pfb;
@@ -627,6 +652,21 @@ private:
         if(x > -1e-6 && x < 1e-6) return 1.0;
         else return std::sin(PI * x) / (PI * x);
     }
+    
+    size_t* uint8_to_points(const std::bitset<8>& val){
+        const size_t n = _constel->get_bps();
+        size_t k = 8 / n;
+        size_t* output = new size_t[k];
+        std::bitset<8> mask = 0xFF;
+        mask >>= (8 - n);
+        for(size_t i = 0; i < k; ++i){
+            std::bitset<8> x = (val & (mask << (i * n))) >> (i * n);
+            output[i] = x.to_ullong();
+            // std::cout<<"i: "<<i<<", val: "<<val<<", mask: "<<(mask << (i * n))<<", x: "<<x<<", output: "<<output[i]<<"\n";
+        }
+        return output;
+    }
+
 public:
     firefighter() = delete;
 
@@ -654,6 +694,10 @@ public:
     eftc<std::complex<double>, std::complex<double>> get_fll_upper_band() const{return _fll_upperband_filter;}
     size_t get_sample_delay() const{return _pll_pfb.get_sample_delay();}
 
+    size_t* get_preamble_points() const{return _pev_preamble;}
+    size_t get_preamble_size() const{return _pev_preamble_size;}
+    std::complex<double>* get_sync_word() const{return _pev_sync_words;}
+
     void set_sps(size_t sps){_sps = sps; update_internals();}
     void set_num_filters(size_t n){_n_filts = n; update_internals();}
     void set_bandwidth(double bandwidth){_loop_bw = bandwidth; update_internals();}
@@ -666,51 +710,64 @@ public:
     DEBUG_INTERFACE* debug(){return &_debug;}
 
     /**
-     * @brief Operate the symbol recovery on one sample.
-     * @param sample complex sample from input stream
-     * @param output buffer having enough space for the output
+     * @brief Run the AGC on an input complex sample
+     * @param input 
+     * @return std::complex<double> 
      */
-    int operate(const std::complex<double>& sample, std::complex<double>* output){
-        /* AGC CALCULATIONS - WORKS */
-        std::complex<double> agc_output = sample * _agc_gain;
+    std::complex<double> agc(std::complex<double> input){
+        std::complex<double> agc_output = input * _agc_gain;
         _agc_gain += _agc_rate * (_agc_ref - std::sqrt(std::pow(agc_output.real(), 2.0) + std::pow(agc_output.imag(), 2.0)));
         if(_agc_gain > _agc_max_gain){
             _agc_gain = _agc_max_gain;
         }
+        #ifdef DEBUG
         _debug.AGC_GAIN_HIST[_debug.curr] = _agc_gain;
-        /*******************/
+        #endif
+        return agc_output;
+    }
 
-        /* FLL CALCULATIONS - WORKS */
+    /**
+     * @brief Run the FLL on an input complex sample
+     * @param input 
+     * @return std::complex<double> 
+     */
+    std::complex<double> fll(std::complex<double> input){
         std::complex<double> fll_nco = std::polar(1.0,  _fll_phase);
-        std::complex<double> fll_output = agc_output * fll_nco;
-    
+        std::complex<double> fll_output = input * fll_nco;
+
         std::complex<double> out_lower = _fll_lowerband_filter.filter(fll_output);
         std::complex<double> out_upper = _fll_upperband_filter.filter(fll_output);
 
         _fll_err = std::norm(out_upper) - std::norm(out_lower);
-
         _fll_freq += _fll_beta * _fll_err;
         _fll_phase += _fll_freq;
-        
-        // Wrap around
+
         if(_fll_phase > 2.0 * PI) _fll_phase = std::fmod(_fll_phase, 2.0 * PI);
         if(_fll_phase < -2.0 * PI) _fll_phase = std::fmod(_fll_phase, -2.0 * PI);
         _fll_freq = _fll_freq > _fll_max_freq ? _fll_max_freq : _fll_freq;
         _fll_freq = _fll_freq < _fll_min_freq ? _fll_min_freq : _fll_freq;
 
+        #ifdef DEBUG
         _debug.FLL_ERR_HIST[_debug.curr] = _fll_err;
         _debug.FLL_FREQ_HIST[_debug.curr] = _fll_freq;
         _debug.FLL_PHASE_HIST[_debug.curr] = _fll_phase;
-        /*******************/
+        #endif
+        return fll_output;
+    }
 
-        /* PLL CALCULATIONS - IMPLEMENTED */
-        int n = _pll_pfb.operate(fll_output, _pll_output_buffer);
+    /**
+     * @brief Run the PLL on an input complex sample, which acts as a pure decimator
+     * @param input 
+     * @return std::complex<double> 
+     */
+    std::complex<double> pll(std::complex<double> input, int& n){
+        n = _pll_pfb.operate(input, _pll_output_buffer);
+        std::complex<double> pll_output = 0.0;
         if(n != 0){
             std::complex<double> pll_nco = std::polar(1.0, -_pll_phase);
-            std::complex<double> pll_output = *_pll_output_buffer * pll_nco;
+            pll_output = *_pll_output_buffer * pll_nco;
 
             _pll_err = _constel->phase_error_detector(pll_output);
-            _pll_err = 0.5 * (std::abs(_pll_err + 1.0) - std::abs(_pll_err - 1.0));
 
             _pll_freq += _pll_beta * _pll_err;
             _pll_phase += _pll_freq + _pll_alpha * _pll_err;
@@ -719,73 +776,36 @@ public:
             if(_pll_phase < -2.0 * PI) _pll_phase = std::fmod(_pll_phase, -2.0 * PI);
             _pll_freq = _pll_freq > _pll_max_freq ? _pll_max_freq : _pll_freq;
             _pll_freq = _pll_freq < _pll_min_freq ? _pll_min_freq : _pll_freq;
-
-            output[0] = pll_output;
         }
+        #ifdef DEBUG
         _debug.PLL_ERR_HIST[_debug.curr] = _pll_err;
         _debug.PLL_PHASE_HIST[_debug.curr] = _pll_phase;
         _debug.PLL_FREQ_HIST[_debug.curr] = _pll_freq;
-        /*******************/
+        #endif
+        return pll_output;
+    }
 
-        /* FIR SYMBOL SYNC - NOT IMPLEMENTED */
-        /* Essentially just another pll implementation */
-        // for(size_t i = 0; i < _n_filts; ++i){
-        //     _pll_bank[i].feed_sample(output[0]);
-        //     _pll_deriv[i].feed_sample(output[0]);
-        // }
+    /**
+     * @brief Operate the symbol recovery on one sample.
+     * @param sample complex sample from input stream
+     * @param output buffer having enough space for the output
+     */
+    int operate(const std::complex<double>& sample, std::complex<double>* output){
+        std::complex<double> agc_out = agc(sample);
 
-        // int n2 = 0;
+        std::complex<double> fll_out = fll(agc_out);
 
-        // while(b < _n_filts){
-        //     mf = _pll_bank[b].operate();
-        //     output[n2] = mf / static_cast<double>(_sps);
+        /* PREAMBLE CORRELATION ESTIMATOR - NOT IMPLEMENTED */
+        
 
-        //     if(decim_counter == 1){
-        //         decim_counter = 0;
+        
+        /***************************************************/
 
-        //         dmf = _pll_deriv[b].operate();
-
-        //         q = (std::conj(mf) * dmf).real();
-        //         if(q > 1.0) q = 1.0;
-        //         if(q < -1.0) q = -1.0;
-
-        //         // advance iir stuff
-        //         x[2] = x[1];
-        //         x[1] = x[0];
-        //         x[0] = q;
-        //         y[2] = y[1];
-        //         y[1] = y[0];
-
-        //         double v = x[0] * B[0] + x[1] * B[1] * x[2] * B[2];
-        //         y[0] = v - y[1] * A[1] - y[2] * A[2];
-
-        //         qhat = y[0];
-
-        //         // end IIR STUff
-
-        //         rate += rate_adjustment * qhat;
-        //         del = rate + qhat;
-
-        //         ///////////////////
-        //         tau_decim = tau;
-        //     }
-        //     decim_counter++;
-
-        //     tau += del;
-        //     bf = tau * static_cast<double>(_n_filts);
-        //     b = std::round(bf);
-        //     n2++;
-        // }
-        // tau -= 1.0;
-        // bf -= static_cast<double>(_n_filts);
-        // b -= _n_filts;
+        int n = 0;
+        std::complex<double> pll_out = pll(fll_out, n);
+        output[0] = pll_out;
 
 
-        // for(size_t i = 0; i < _n_filts; ++i){
-        //     _pll_bank[i].increment();
-        //     _pll_deriv[i].increment();
-        // }
-        /**************************************/
         _debug.curr = (_debug.curr + 1) % _debug.n;
         // output[0] = fll_output;
         // return n2;
@@ -798,6 +818,7 @@ public:
         _fll_upperband_filter.reset();
         _fll_lowerband_filter.reset();
         _pll_pfb.reset();
+        _pev_filter.reset();
     }
 
     void set_pll_alpha(double alpha){_pll_alpha = alpha;}
@@ -817,13 +838,54 @@ private:
         _fll_damping = std::sqrt(2.0) / 2.0;
         _fll_alpha = 0.0;
         _fll_beta = 4.0 * _loop_bw / static_cast<double>(_sps);
-        _fll_max_freq = 4.0 * PI / static_cast<double>(_sps);
-        _fll_min_freq = -4.0 * PI / static_cast<double>(_sps);
+        _fll_max_freq = 2.0 * PI / static_cast<double>(_sps);
+        _fll_min_freq = -2.0 * PI / static_cast<double>(_sps);
         _fll_phase = 0.0;
         _fll_freq = 0.0;
         _fll_size = 55;
         _fll_err = 0.0;
         set_fll_filter();
+    }
+
+    void update_preamble(){
+        // Update the reference to the modulator used, and setup the sync words
+        _pev_mod = new rectangular_modulator(_constel, _sps, _n_filts, _rolloff);
+        const size_t preamble_len = 8;
+        const size_t k = 8 / _constel->get_bps();
+        const std::bitset<8> preamble[preamble_len] = {0xAA, 0x00, 0xFE, 0x2E, 0xE2, 0xFC, 0x05, 0x70};
+        _pev_preamble = new size_t[k * preamble_len];
+        _pev_preamble_size = k * preamble_len;
+        for(size_t i = 0; i < preamble_len; ++i){
+            size_t* points = uint8_to_points(preamble[i]);
+            for(size_t j = 0; j < k; ++j){
+                _pev_preamble[i * k + j] = points[j];
+            }
+        }
+
+        // Setup the modulator sync word
+        _pev_sync_words = new std::complex<double>[_sps * _pev_preamble_size];
+        for(size_t i = 0; i < _pev_preamble_size; ++i){
+            _pev_mod->operate(_pev_preamble[i], _pev_sync_words + i * _sps);
+        }
+        for(size_t i = 0; i < _sps * _pev_preamble_size; ++i){
+            _pev_sync_words[i] = std::conj(_pev_sync_words[i]);
+        }
+        std::reverse(_pev_sync_words, _pev_sync_words + _sps * _pev_preamble_size);
+
+        _pev_mark_delay = 1;
+        _pev_old_mark_delay = 1;
+        _pev_threshold = 0.9;
+        _pev_old_threshold = 0.9;
+        _pev_pfa = -std::log(1.0 - _pev_threshold);
+
+        double accum = 0.0;
+        for(size_t i = 0; i < _sps * _pev_preamble_size; ++i){
+            accum += std::abs(_pev_sync_words[i] * std::conj(_pev_sync_words[i]));
+        }
+        _pev_threshold = _pev_threshold * std::pow(accum, 2.0);
+
+        _pev_correlation =  new std::complex<double>[_sps * _pev_preamble_size];
+        _pev_filter.update_taps(_pev_sync_words, _sps * _pev_preamble_size);
     }
 
     void update_pll(){
@@ -832,37 +894,14 @@ private:
 
         _pll_phase = 0.0;
         _pll_freq = 0.0;
-        _pll_max_freq = 0.5;
+        _pll_max_freq = 0.25;
         _pll_min_freq = -1.0 * _pll_max_freq;
         _pll_damping = std::sqrt(2.0) / 2.0;
         _pll_alpha = 4.0 * _pll_damping * _loop_bw / (1.0 + 2.0 * _pll_damping * _loop_bw + std::pow(_loop_bw, 2.0));
         _pll_beta = 4.0 * std::pow(_loop_bw, 2.0) / (1.0 + 2.0 * _pll_damping * _loop_bw + std::pow(_loop_bw, 2.0));
         _pll_err = 0.0;
         _pll_output_buffer = new std::complex<double>[_sps];
-
-        rate = _sps;
-        mf = 0.0;
-        dmf = 0.0;
-        tau = 0.0;
-        del = rate;
-        tau_decim = 0.0;
-        bf = 0.0;
-        b = 0;
-        q = 0.0;
-        qhat = 0.0;
-        qhatprev = 0.0;
-        rate_adjustment = 0.5 * 0.01;
-        decim_counter = 0;
-
-        _pll_bank = new eftc<double, std::complex<double>>[_n_filts];
-        _pll_deriv = new eftc<double, std::complex<double>>[_n_filts];
-
-        for(size_t i = 0; i < _n_filts; ++i){
-            _pll_bank[i].update_taps(_pll_pfb.get_bank()[i].get_taps(), _pll_pfb.get_bank()[i].get_num_taps());
-            _pll_deriv[i].update_taps(_pll_pfb.get_deriv_bank()[i].get_taps(), _pll_pfb.get_deriv_bank()[i].get_num_taps());
-        }
-
-
+        
         set_pll_filter();
     }
 
@@ -931,6 +970,7 @@ private:
      */
     void update_internals(){
         update_fll(); // initialize fll internal variables and update fll filters
+        update_preamble();
         update_agc(); // initialize the AGC section
         update_pll(); // initialize the pll and its polyphase bank
         reset(); // reset internal states for filters
@@ -939,59 +979,5 @@ private:
         #endif
     }
 };
-
-class fir_decimator{
-private:
-
-public:
-
-
-};
-
-class fir_interpolator{
-private:
-    size_t _P; // primitive interpolation
-    size_t _Q; // primitive decimation
-
-    eftc<double, std::complex<double>>* _bank;
-    eftc<double, std::complex<double>>* _deriv;
-public:
-    fir_interpolator(size_t interp, size_t decim, double beta){
-        _P = interp;
-        _Q = decim;
-        double rate = static_cast<double>(_P) / static_cast<double>(_Q);
-        auto prot = root_nyquist(32, 32.0 * rate, 1.0, beta, 8 * rate * 32);
-        resampler<std::complex<double>> resamp(_P / _Q, 32, prot);
-        _bank = new eftc<double, std::complex<double>>[32];
-        _deriv = new eftc<double, std::complex<double>>[32];
-
-        for(size_t i = 0; i < 32; ++i){
-            _bank[i].update_taps(resamp.get_bank()[i].get_taps(), resamp.get_bank()[i].get_num_taps());
-            _deriv[i].update_taps(resamp.get_deriv_bank()[i].get_taps(), resamp.get_deriv_bank()[i].get_num_taps());
-        }
-    }
-
-    void operate(std::complex<double>& sample, std::complex<double>* output){
-        size_t index = 0;
-        size_t n = 0;
-        for(size_t i = 0; i < _Q; ++i){
-            for(size_t j = 0; j < 32; ++j){
-                _bank[j].feed_sample(sample);
-                _deriv[j].feed_sample(sample);
-            }
-
-            while(index < _P){
-                output[n] = _bank[index].operate();
-                n++;
-                index += _Q;
-                std::cout<<"Placed 1 sample, n = "<<n<<"\n";
-            }
-
-            index -= _P;
-        }
-    }
-
-};
-
 
 #endif

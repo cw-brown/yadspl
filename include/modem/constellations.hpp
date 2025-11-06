@@ -7,9 +7,9 @@
 class constellation{
 protected:
     std::vector<std::complex<double>> _points;
-    unsigned int _n;
+    size_t _n;
 
-    double distance(unsigned int idx, const std::complex<double>& sample) const{
+    double distance(size_t idx, const std::complex<double>& sample) const{
         return std::norm(sample - _points.at(idx));
     }
 public:
@@ -25,10 +25,10 @@ public:
 
     virtual ~constellation(){}
 
-    std::complex<double> get_point(const unsigned int& value) const{return _points.at(value);}
-    unsigned int get_size() const{return _n;}
+    std::complex<double> get_point(const size_t& value) const{return _points.at(value);}
+    size_t get_size() const{return _n;}
     std::vector<std::complex<double>> get_constellation() const{return _points;}
-    unsigned int get_bps() const{return std::log2(_n);}
+    constexpr size_t get_bps() const{return std::log2(_n);}
     std::pair<double*, double*> get_IQ(){
         double* I = new double[_n];
         double* Q = new double[_n];
@@ -39,7 +39,7 @@ public:
         return std::pair<double*, double*>(I, Q);
     }
 
-    virtual unsigned int decision(const std::complex<double>& sample) = 0;
+    virtual size_t decision(const std::complex<double>& sample) = 0;
     virtual double phase_error_detector(const std::complex<double>& sample) = 0;
 
     void normalize(normalization norm){
@@ -60,7 +60,7 @@ public:
         }
         }
     }
-    unsigned int closest_point(const std::complex<double>& sample){
+    size_t closest_point(const std::complex<double>& sample){
         double cur_min = distance(0, sample);
         for(unsigned int i = 1; i < _n; ++i){
             double dist = distance(i, sample);
@@ -108,7 +108,7 @@ public:
 
     ~constellation_16qam() override{}
 
-    unsigned int decision(const std::complex<double>& sample) override{
+    size_t decision(const std::complex<double>& sample) override{
         if(sample.real() > 0) return 0;
         else return 1;
     }
@@ -136,7 +136,7 @@ public:
         normalize(normalization::power);
     }
 
-    unsigned int decision(const std::complex<double>& sample) override{
+    size_t decision(const std::complex<double>& sample) override{
         return 2 * (sample.imag() > 0) + (sample.real() > 0);
     }
     double phase_error_detector(const std::complex<double>& sample) override{
@@ -159,7 +159,7 @@ public:
 
     ~constellation_bpsk(){}
 
-    unsigned int decision(const std::complex<double>& sample) override{
+    size_t decision(const std::complex<double>& sample) override{
         return sample.real() >= 0 ? 1 : 0;
     }
     double phase_error_detector(const std::complex<double>& sample) override{
