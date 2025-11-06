@@ -67,6 +67,23 @@ class DataExtractor {
      */
     std::vector<SimpPacket>::iterator getInputPosition();
     
+    /**
+     * @brief Reports how many of the recieved packets are continuous
+     * @returns The number of continuous good packets in the buffer, counting from the start
+     */
+    uint8_t getGoodPacketsContinuous();
+    
+    /**
+     * @brief Reports whether the good packet buffer is full (all packets recieved in this transaction)
+     * @returns True if the good packet buffer is full, false otherwise
+     */
+    bool getGoodPacketsFull();
+
+    /**
+     * @brief Sets all packets in the good packet buffer to the unrecieved state
+     */
+    void flushGoodPacketBuffer();
+    
 };
 
 # endif

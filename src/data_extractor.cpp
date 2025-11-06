@@ -83,3 +83,47 @@ std::vector<SimpPacket>::iterator DataExtractor::getInputPosition() {
     return inputPos;
 
 }
+
+uint8_t DataExtractor::getGoodPacketsContinuous() {
+
+    uint8_t countGood;
+
+
+    countGood = 0;
+
+    for(std::vector<SimpPacket>::iterator check = goodPackets->begin(); check != goodPackets->cend(); check++) {
+
+        if(check->controlCode == 0b1110) {
+
+            countGood++;
+
+        }
+
+        // If there are ever more packets checked than good packets, then good packets must not be continuous
+        if(countGood < std::distance(goodPackets->begin(), check) + 1) {
+
+            return countGood;
+
+        }
+
+    }
+
+    return countGood;
+
+}
+
+bool DataExtractor::getGoodPacketsFull() {
+
+    return (getGoodPacketsContinuous() == goodPackets->size());
+    
+}
+
+void DataExtractor::flushGoodPacketBuffer() {
+
+    for(std::vector<SimpPacket>::iterator toClear = goodPackets->begin(); toClear != goodPackets->cend(); toClear++) {
+
+        toClear->controlCode = 0b1110;
+
+    }
+
+}
