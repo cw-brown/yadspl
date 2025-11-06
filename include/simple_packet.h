@@ -38,7 +38,7 @@ struct SimpPacket {
    std::vector<uint8_t> data;
 
    /**
-    * @brief True checksum returned good 
+    * @brief True if checksum returned good 
     */
    bool erc;
 

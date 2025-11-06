@@ -100,6 +100,10 @@ void PacketTransmitter::tick() {
             }
             break;
 
+        default:
+            
+            break;
+
     }
 
 }
