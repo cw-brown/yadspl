@@ -79,6 +79,19 @@ class DataExtractor {
     bool getGoodPacketsFull();
 
     /**
+     * @brief Puts all of the data from the good packets to to the output buffer
+     * @param out_buffer The buffer to put the data from the good packets
+     */
+    void extractGoodPackets(std::vector<uint8_t> * out_buffer);
+
+    /**
+     * @brief Puts all of the data from the good packets to to the output buffer
+     * @param out_buffer The buffer to put the data from the good packets
+     * @param good_num How many packets should be put
+     */
+    void extractGoodPackets(std::vector<uint8_t> * out_buffer, uint8_t good_num);
+
+    /**
      * @brief Sets all packets in the good packet buffer to the unrecieved state
      */
     void flushGoodPacketBuffer();

@@ -264,8 +264,8 @@ uint8_t PacketReformer::formPacket(bool are_we_source, uint8_t sender_address, u
 
 void PacketReformer::sortPacket(SimpPacket to_sort, bool are_we_source) {
 
-    // If we are sink and code 0000, then data packet, else control
-    if((to_sort.controlCode == 0b0000) && !are_we_source) {
+    // If we are sink and code 0b0000 or 0b0001, then data packet, else control
+    if((to_sort.controlCode == 0b0000 || to_sort.controlCode == 0b0001) && !are_we_source) {
 
         dataPacketBuffer->push_back(to_sort);
 

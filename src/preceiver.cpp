@@ -59,13 +59,49 @@ void PacketReceiver::tick() {
 
         case UNPACKET:
 
+            // Process next data packet
             dExtractor.processNextPacket();
-            while(!ackBuffer->empty()) {
+
+            if(!ackBuffer->empty()) {
+
+                for(std::vector<uint8_t>::iterator ack = ackBuffer->begin(); ack != ackBuffer->end(); ack++) {
+
+                    toSend->push_back(pFormer.formAcknowledgePacket(0, *ack));
+
+                }
+
+                ackBuffer->clear();
+
             }
-            while(!arqBuffer->empty()){
+
+            if(!arqBuffer->empty()) {
+
+                for(std::vector<uint8_t>::iterator arq = arqBuffer->begin(); arq != arqBuffer->end(); arq++) {
+
+                    toSend->push_back(pFormer.formRepeatPacket(*arq));
+
+                }
+
+                arqBuffer->clear();
+
             }
+
+            // Need to check if we are still waiting on data in this frame
+            if(dExtractor.getGoodPacketsFull()) {
+
+                state = OUT_BUFF;
+
+            } else{
+
+                state = WAIT_DATA;
+            }
+
+        case OUT_BUFF:
+            
+            dExtractor.extractGoodPackets(receiveData);
+            state = START;
             break;
-        
+
         default:
 
             break;

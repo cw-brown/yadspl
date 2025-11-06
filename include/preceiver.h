@@ -22,7 +22,7 @@ enum State {
     WAIT_DATA,
     UNPACKET,
     SEND,
-    WAIT_ACK,
+    OUT_BUFF,
 };
 
 /** 
@@ -97,7 +97,7 @@ class PacketReceiver {
 
     public:
 
-     /**
+    /**
      * @brief Construct a new packet transmitter
      */
     PacketReceiver(

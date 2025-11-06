@@ -46,6 +46,7 @@ void PacketTransmitter::tick() {
                 state = WAIT_DATA;
 
             }
+            break;
 
         case WAIT_DATA:
 
