@@ -20,21 +20,6 @@ class PacketFormer {
     private:
 
     /**
-    * @brief The address of the sender
-    */
-    const uint8_t senderAddress;
-
-    /**
-    * @brief The address of the reciever
-    */
-    const uint8_t recieverAddress;
-
-    /**
-     * @brief If we are the data source (transaction role)
-     */
-    bool areWeSource;
-
-    /**
      * @brief A pointer to the crc generator
      */
     crcutil_interface::CRC * crcGenny;
@@ -52,20 +37,7 @@ class PacketFormer {
      */
     PacketFormer(
         uint8_t sender_address,
-        uint8_t reciever_address,
-        bool are_we_source);
-
-    /**
-     * @brief Tells if we are currently the source of data
-     * @returns the current value of areWeSource
-     */
-    bool getAreWeSource();
-
-    /**
-     * @brief Sets whether we are curretly the source of data
-     * @param are_we_source Whether we should be set as the source of data
-     */
-    void setAreWeSource(bool are_we_source);
+        uint8_t reciever_address);
 
     // Transmitter Packets
 

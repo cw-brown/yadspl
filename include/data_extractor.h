@@ -52,8 +52,7 @@ class DataExtractor {
     DataExtractor(
         std::vector<uint8_t> * arq_buffer,
         std::vector<uint8_t> * ack_buffer,
-        std::vector<SimpPacket> * data_packet_buffer,
-        std::vector<SimpPacket> * good_packets
+        std::vector<SimpPacket> * data_packet_buffer
         );
 
     /**

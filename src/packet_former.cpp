@@ -4,31 +4,17 @@
 
 PacketFormer::PacketFormer(
         uint8_t sender_address,
-        uint8_t reciever_address,
-        bool are_we_source) :
+        uint8_t reciever_address)
+        //:
         //inputBuffer(input_buffer),
-        //outputBuffer(output_buffer),
-        senderAddress(sender_address),
-        recieverAddress(reciever_address),
-        areWeSource(are_we_source) {
+        //outputBuffer(output_buffer)
+        {
 
     // Make crc generator with polynomial for ISO 3309 in reversed format
     crcGenny = crcutil_interface::CRC::Create(0xEDB88320, 0, 32, true, 0, 0, 0, true, NULL);
-    tempPacket.senderAddress = senderAddress;
-    tempPacket.recieverAddress = recieverAddress;
+    tempPacket.senderAddress = sender_address;
+    tempPacket.recieverAddress = reciever_address;
 
-}
-
-bool PacketFormer::getAreWeSource() {
-
-    return areWeSource;
-
-}
-
-void PacketFormer::setAreWeSource(bool are_we_source) {
-
-    areWeSource = are_we_source;
-    
 }
 
 Packet PacketFormer::formDataPacket(std::vector<uint8_t> * data, uint8_t sequence_number, uint8_t data_length) {
@@ -49,7 +35,7 @@ Packet PacketFormer::formDataPacket(std::vector<uint8_t> * data, uint8_t sequenc
     // Form data section
     for(int i = data_length - 1; i >= 0; i--) {
 
-        (tempPacket.data).push_back(*data->end());
+        (tempPacket.data).push_back(*(data->end()-1));
         data->pop_back();
 
     }

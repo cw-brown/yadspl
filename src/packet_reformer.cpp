@@ -5,30 +5,14 @@
 PacketReformer::PacketReformer(
     std::vector<bool> * in_data_buffer,
     std::vector<SimpPacket> * control_packet_buffer,
-    std::vector<SimpPacket> * data_packet_buffer,
-    uint8_t sender_address,
-    uint8_t reciever_address,
-    bool are_we_source) : 
+    std::vector<SimpPacket> * data_packet_buffer) : 
     inDataBuffer(in_data_buffer),
-    senderAddress(sender_address),
-    recieverAddress(reciever_address),
-    areWeSource(are_we_source) {
+    controlPacketBuffer(control_packet_buffer),
+    dataPacketBuffer(data_packet_buffer) {
 
     // Make crc generator with polynomial for ISO 3309 in reversed format
     crcGenny = crcutil_interface::CRC::Create(0xEDB88320, 0, 32, true, 0, 0, 0, true, NULL);
 
-}
-
-bool PacketReformer::getAreWeSource() {
-
-    return areWeSource;
-
-}
-
-void PacketReformer::setAreWeSource(bool are_we_source) {
-
-    areWeSource = are_we_source;
-    
 }
 
 std::vector<bool>::iterator PacketReformer::getInputPosition() {
@@ -37,7 +21,7 @@ std::vector<bool>::iterator PacketReformer::getInputPosition() {
 
 }
 
-uint8_t PacketReformer::formPacket() {
+uint8_t PacketReformer::formPacket(bool are_we_source, uint8_t sender_address, uint8_t receiver_address) {
 
     // Temp data storage
     uint8_t tempFlag;
@@ -179,7 +163,7 @@ uint8_t PacketReformer::formPacket() {
     }
 
     // Check if our address, return appropriate value if not
-    if(tempRecAddress != recieverAddress) {
+    if(tempRecAddress != receiver_address) {
 
         inputPos = endPos;
         inDataBuffer->erase(inDataBuffer->begin(), endPos);
@@ -197,7 +181,7 @@ uint8_t PacketReformer::formPacket() {
     }
 
     // Check if sender we expect, return appropriate value if not
-    if(tempSendAddress != senderAddress) {
+    if(tempSendAddress != sender_address) {
 
         inputPos = endPos;
         inDataBuffer->erase(inDataBuffer->begin(), endPos);
@@ -259,7 +243,7 @@ uint8_t PacketReformer::formPacket() {
     inputPos += 8;
 
     // Put to appropriate buffer
-    sortPacket(tempPacket);
+    sortPacket(tempPacket, are_we_source);
     
     // Clear the input data buffer to appropriate point
     inputPos = endPos;    
@@ -278,10 +262,10 @@ uint8_t PacketReformer::formPacket() {
 
 }
 
-void PacketReformer::sortPacket(SimpPacket to_sort) {
+void PacketReformer::sortPacket(SimpPacket to_sort, bool are_we_source) {
 
     // If we are sink and code 0000, then data packet, else control
-    if((to_sort.controlCode == 0b0000) && !getAreWeSource()) {
+    if((to_sort.controlCode == 0b0000) && !are_we_source) {
 
         dataPacketBuffer->push_back(to_sort);
 

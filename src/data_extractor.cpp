@@ -3,12 +3,10 @@
 DataExtractor::DataExtractor(
         std::vector<uint8_t> * arq_buffer,
         std::vector<uint8_t> * ack_buffer,
-        std::vector<SimpPacket> * data_packet_buffer,
-        std::vector<SimpPacket> * good_packets) :
+        std::vector<SimpPacket> * data_packet_buffer) :
         ackBuffer(ack_buffer),
         arqBuffer(arq_buffer),
-        dataPacketBuffer(data_packet_buffer),
-        goodPackets(good_packets) {
+        dataPacketBuffer(data_packet_buffer) {
 
     goodPackets = new std::vector<SimpPacket>;
     goodPackets->resize(sizeof(uint8_t));
@@ -102,7 +100,7 @@ uint8_t DataExtractor::getGoodPacketsContinuous() {
         // If there are ever more packets checked than good packets, then good packets must not be continuous
         if(countGood < std::distance(goodPackets->begin(), check) + 1) {
 
-            return countGood;
+            return countGood - 1;
 
         }
 
