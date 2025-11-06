@@ -33,7 +33,8 @@ int main(){
     size_t sps = 2;
     size_t n_filt = 32;
     size_t points = 250;
-    size_t N = sps * points;
+    size_t preamble_len = 0;
+    size_t N = preamble_len + sps * points;
 
     static float v = 0.0f;
     static float offset = 0.0f;
@@ -42,7 +43,7 @@ int main(){
     // static float beta = 0.83998;
     // static float max_freq = 0.13;
 
-    constellation_qpsk constel{};
+    constellation_bpsk constel{};
     noise<double> sig_gen{};
     channel_model channel(offset, v);
     rectangular_modulator modulator(&constel, sps, n_filt, 0.35);
@@ -52,9 +53,22 @@ int main(){
 
     unsigned int* pattern = new unsigned int[points];
 
-    static int symb_delay = recovery.get_sample_delay() + sps;
+    static int symb_delay = 12;
 
-    for(unsigned int i = 0; i < points; ++i){
+    for(size_t i = 0; i < preamble_len; ++i){
+        int val;
+        if(i % 2){
+            val = 0;
+        }
+        else{
+            val = 1;
+        }
+        modulator.operate(val, data + i * sps);
+        pattern[i] = val;
+
+    }
+
+    for(unsigned int i = preamble_len; i < points; ++i){
         // auto point = (i * i * 2) % (constel.get_size());
         auto point = sig_gen.random_int_range(0, constel.get_size() - 1);
         modulator.operate(point, data + i * sps);
@@ -119,7 +133,7 @@ int main(){
                 imag[i] = output[i].imag();
             }
 
-            recovery.reset();
+            // recovery.reset();
 
             ImGui::SliderFloat("Frequency Offset", &offset, 0.0, 1.0);
             ImGui::SliderFloat("Noise Voltage", &v, 0.0, 1e-1, "%.5f");
@@ -142,6 +156,7 @@ int main(){
                 ImPlot::EndPlot();
             }
             if(ImPlot::BeginPlot("Time Data")){
+                ImPlot::SetupAxesLimits(0, points, -1.0 * static_cast<double>(constel.get_size() - 1), constel.get_size());
                 ImPlot::PlotLine("Input", pattern, points);
                 ImPlot::PlotLine("Output", out_pattern + symb_delay, points - symb_delay);
                 ImPlot::EndPlot();

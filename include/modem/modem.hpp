@@ -598,6 +598,21 @@ private:
     double _pll_err;
     std::complex<double>* _pll_output_buffer;
 
+    eftc<double, std::complex<double>>* _pll_bank;
+    eftc<double, std::complex<double>>* _pll_deriv;
+    std::complex<double> mf, dmf;
+    double rate, del, tau, tau_decim, bf;
+    double rate_adjustment;
+    size_t b, decim_counter;
+    double q, qhat, qhatprev;
+
+    // prototype iir filter stuff
+    double x[3] = {0.0, 0.0, 0.0};
+    double y[2] = {0.0, 0.0};
+
+    double B[3] = {0.22 * 0.01, 0.0, 0.0};
+    double A[3] = {1.0 - 0.5 * (1.0 - 0.01), -0.495* (1.0 - 0.01), 0.0};
+
     std::vector<double> _pll_prototype;
     resampler<std::complex<double>> _pll_pfb;
     /***************************/
@@ -683,9 +698,6 @@ public:
         _fll_freq = _fll_freq > _fll_max_freq ? _fll_max_freq : _fll_freq;
         _fll_freq = _fll_freq < _fll_min_freq ? _fll_min_freq : _fll_freq;
 
-        // while(_fll_phase > 2.0 * PI) _fll_phase -= 2.0 * PI;
-        // while(_fll_phase < -2.0 * PI) _fll_phase += 2.0 * PI;
-
         _debug.FLL_ERR_HIST[_debug.curr] = _fll_err;
         _debug.FLL_FREQ_HIST[_debug.curr] = _fll_freq;
         _debug.FLL_PHASE_HIST[_debug.curr] = _fll_phase;
@@ -698,7 +710,7 @@ public:
             std::complex<double> pll_output = *_pll_output_buffer * pll_nco;
 
             _pll_err = _constel->phase_error_detector(pll_output);
-            // _pll_err = 0.5 * (std::abs(_pll_err + 1.0) - std::abs(_pll_err - 1.0));
+            _pll_err = 0.5 * (std::abs(_pll_err + 1.0) - std::abs(_pll_err - 1.0));
 
             _pll_freq += _pll_beta * _pll_err;
             _pll_phase += _pll_freq + _pll_alpha * _pll_err;
@@ -707,9 +719,6 @@ public:
             if(_pll_phase < -2.0 * PI) _pll_phase = std::fmod(_pll_phase, -2.0 * PI);
             _pll_freq = _pll_freq > _pll_max_freq ? _pll_max_freq : _pll_freq;
             _pll_freq = _pll_freq < _pll_min_freq ? _pll_min_freq : _pll_freq;
-            
-            // while(_pll_phase > 2.0 * PI) _pll_phase -= 2.0 * PI;
-            // while(_pll_phase < -2.0 * PI) _pll_phase += 2.0 * PI;
 
             output[0] = pll_output;
         }
@@ -718,10 +727,71 @@ public:
         _debug.PLL_FREQ_HIST[_debug.curr] = _pll_freq;
         /*******************/
 
+        /* FIR SYMBOL SYNC - NOT IMPLEMENTED */
+        /* Essentially just another pll implementation */
+        // for(size_t i = 0; i < _n_filts; ++i){
+        //     _pll_bank[i].feed_sample(output[0]);
+        //     _pll_deriv[i].feed_sample(output[0]);
+        // }
+
+        // int n2 = 0;
+
+        // while(b < _n_filts){
+        //     mf = _pll_bank[b].operate();
+        //     output[n2] = mf / static_cast<double>(_sps);
+
+        //     if(decim_counter == 1){
+        //         decim_counter = 0;
+
+        //         dmf = _pll_deriv[b].operate();
+
+        //         q = (std::conj(mf) * dmf).real();
+        //         if(q > 1.0) q = 1.0;
+        //         if(q < -1.0) q = -1.0;
+
+        //         // advance iir stuff
+        //         x[2] = x[1];
+        //         x[1] = x[0];
+        //         x[0] = q;
+        //         y[2] = y[1];
+        //         y[1] = y[0];
+
+        //         double v = x[0] * B[0] + x[1] * B[1] * x[2] * B[2];
+        //         y[0] = v - y[1] * A[1] - y[2] * A[2];
+
+        //         qhat = y[0];
+
+        //         // end IIR STUff
+
+        //         rate += rate_adjustment * qhat;
+        //         del = rate + qhat;
+
+        //         ///////////////////
+        //         tau_decim = tau;
+        //     }
+        //     decim_counter++;
+
+        //     tau += del;
+        //     bf = tau * static_cast<double>(_n_filts);
+        //     b = std::round(bf);
+        //     n2++;
+        // }
+        // tau -= 1.0;
+        // bf -= static_cast<double>(_n_filts);
+        // b -= _n_filts;
+
+
+        // for(size_t i = 0; i < _n_filts; ++i){
+        //     _pll_bank[i].increment();
+        //     _pll_deriv[i].increment();
+        // }
+        /**************************************/
         _debug.curr = (_debug.curr + 1) % _debug.n;
         // output[0] = fll_output;
+        // return n2;
         return n;
         // return -1;
+        // return 0;
     }
 
     void reset(){
@@ -765,11 +835,33 @@ private:
         _pll_max_freq = 0.5;
         _pll_min_freq = -1.0 * _pll_max_freq;
         _pll_damping = std::sqrt(2.0) / 2.0;
-        // _pll_damping = 2.0 * _n_filts;
         _pll_alpha = 4.0 * _pll_damping * _loop_bw / (1.0 + 2.0 * _pll_damping * _loop_bw + std::pow(_loop_bw, 2.0));
         _pll_beta = 4.0 * std::pow(_loop_bw, 2.0) / (1.0 + 2.0 * _pll_damping * _loop_bw + std::pow(_loop_bw, 2.0));
         _pll_err = 0.0;
         _pll_output_buffer = new std::complex<double>[_sps];
+
+        rate = _sps;
+        mf = 0.0;
+        dmf = 0.0;
+        tau = 0.0;
+        del = rate;
+        tau_decim = 0.0;
+        bf = 0.0;
+        b = 0;
+        q = 0.0;
+        qhat = 0.0;
+        qhatprev = 0.0;
+        rate_adjustment = 0.5 * 0.01;
+        decim_counter = 0;
+
+        _pll_bank = new eftc<double, std::complex<double>>[_n_filts];
+        _pll_deriv = new eftc<double, std::complex<double>>[_n_filts];
+
+        for(size_t i = 0; i < _n_filts; ++i){
+            _pll_bank[i].update_taps(_pll_pfb.get_bank()[i].get_taps(), _pll_pfb.get_bank()[i].get_num_taps());
+            _pll_deriv[i].update_taps(_pll_pfb.get_deriv_bank()[i].get_taps(), _pll_pfb.get_deriv_bank()[i].get_num_taps());
+        }
+
 
         set_pll_filter();
     }
