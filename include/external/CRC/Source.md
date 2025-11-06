@@ -1,0 +1,1 @@
+Code from https://github.com/lizardfs/lizardfs/tree/b1e97f974fc3a4046edaf9fdc3962264d4cd24fa/external/crcutil-1.0. Used under license.

@@ -9,8 +9,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 if(MSVC)
     add_compile_options(/W4 /permissive-)
 else()
-    add_compile_options(-Wall -Wextra -Wpedantic -Og -fconcepts-diagnostics-depth=2)
-    # add_link_options(-lfftw3 -lm)
+    add_compile_options(-Wall -Wextra -Wpedantic -Og -fconcepts-diagnostics-depth=2 -mcrc32)
 endif()
 
 find_path(FFTW3_INCLUDE_DIR fftw3.h HINTS "C:/msys64/ucrt64/include")
@@ -24,6 +23,9 @@ file(GLOB IMGUI_SRC ${IMGUI_DIR}/*.cpp
 set(IMPLOT_DIR ${CMAKE_SOURCE_DIR}/include/external/implot)
 file(GLOB IMPLOT_SRC ${IMPLOT_DIR}/*.cpp)
 
+set(CRC_DIR ${CMAKE_SOURCE_DIR}/include/external/CRC)
+file(GLOB CRC_SRC ${CRC_DIR}/*.cc)
+
 find_package(OpenGL REQUIRED)
 
 find_package(FFTW3 REQUIRED)
@@ -35,14 +37,16 @@ pkg_check_modules(GLFW REQUIRED glfw3)
 include_directories(${CMAKE_SOURCE_DIR}/include)
 include_directories(${CMAKE_SOURCE_DIR}/include/yadspl-filter)
 include_directories(${CMAKE_SOURCE_DIR}/include/modem)
+include_directories(${CMAKE_SOURCE_DIR}/include/external)
 include_directories(${FFTW3_INCLUDE_DIR})
 
 # source files
 file(GLOB SOURCES CONFIGURE_DEPENDS src/*.cpp)
 
-add_executable(${PROJECT_NAME} ${SOURCES} ${IMGUI_SRC} ${IMPLOT_SRC})
+add_executable(${PROJECT_NAME} ${SOURCES} ${IMGUI_SRC} ${IMPLOT_SRC} ${CRC_SRC})
 
-target_include_directories(${PROJECT_NAME} PRIVATE ${IMGUI_DIR} ${IMGUI_DIR}/backends ${IMPLOT_DIR} ${GLFW_INCLUDE_DIRS})
+target_include_directories(${PROJECT_NAME} PRIVATE ${IMGUI_DIR} ${IMGUI_DIR}/backends 
+    ${IMPLOT_DIR} ${GLFW_INCLUDE_DIRS} ${CRC_DIR})
 
 target_link_libraries(${PROJECT_NAME} ${GLFW_LIBRARIES} OpenGL::GL ${FFTW3_LIBRARY})
 # target_link_libraries(${PROJECT_NAME} PRIVATE ${FFTW3_LIBRARY})
