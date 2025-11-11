@@ -580,13 +580,6 @@ private:
     DEBUG_INTERFACE _debug;
     #endif
 
-    enum RECOVERY_STATE{
-        WAIT, // waiting for a packet
-        PREAMBLE, // Recovering a preamble
-        RECOVER, // actually recovering
-        RESET
-    } _state;
-
     size_t _sps; // samples per symbol of the input complex stream
     size_t _n_filts; // number of filters to use for matched filtering
     constellation* _constel; // the constellation to use
@@ -616,16 +609,30 @@ private:
     /********************************/
 
     /* PREAMBLE ESTIMATION VARIABLES */
+    enum PEV_STATE{
+        COLLECT, // Collect samples for correlation
+        ONE_MORE, // PEV has found a point of correlation and needs one more sample
+        OPERATE,
+        FINISHED
+    } _pev_state;
+
     std::complex<double>* _pev_sync_words;
+    size_t _pev_sync_size;
     size_t* _pev_preamble;
     size_t _pev_preamble_size;
     size_t _pev_mark_delay, _pev_old_mark_delay;
     double _pev_threshold, _pev_old_threshold;
     double _pev_pfa;
+    size_t _pev_corr_idx;
+
+    size_t _pev_corr_est;
+    double _pev_time_est;
+    double _pev_phase_est;
 
     rectangular_modulator* _pev_mod;
 
-    std::complex<double>* _pev_correlation;
+    std::complex<double>* _pev_corr_hist;
+    double* _pev_corr_mag_hist;
     eftc<std::complex<double>, std::complex<double>> _pev_filter;
     /********************************/
 
@@ -697,6 +704,8 @@ public:
     size_t* get_preamble_points() const{return _pev_preamble;}
     size_t get_preamble_size() const{return _pev_preamble_size;}
     std::complex<double>* get_sync_word() const{return _pev_sync_words;}
+    size_t get_sync_size() const{return _pev_sync_size;}
+    double get_pev_threshold() const{return _pev_threshold;}
 
     void set_sps(size_t sps){_sps = sps; update_internals();}
     void set_num_filters(size_t n){_n_filts = n; update_internals();}
@@ -786,32 +795,85 @@ public:
     }
 
     /**
+     * @brief Run the preamble detector on a single input
+     * @param input 
+     * @return double
+     */
+    std::complex<double> preamble(std::complex<double> input){
+        // Runs the correlated filter and returns the squared magnitude
+        _pev_filter.feed_sample(input);
+        std::complex<double> out = _pev_filter.operate();
+        _pev_filter.increment();
+        return out;
+    }
+
+    /**
+     * @brief Runs the PEV on an input, which may modify the internal state and pass timing and phase estimates to a section
+     * @param input 
+     * @return true if the PEV has found an estimate
+     */
+    bool pev(std::complex<double> input){
+        if(_pev_state == FINISHED) return true;
+
+        _pev_filter.feed_sample(input);
+        std::complex<double> pev_corr = _pev_filter.operate();
+        _pev_filter.increment();
+
+        double pev_corr_mag = std::norm(pev_corr);
+
+        _pev_corr_hist[_pev_corr_idx] = pev_corr;
+        _pev_corr_mag_hist[_pev_corr_idx] = pev_corr_mag;
+
+        if(pev_corr_mag <= _pev_threshold && _pev_state == COLLECT){
+            // We havent reached a good correlation so we should continue sampling
+            _pev_corr_idx++;
+            _pev_state = COLLECT;
+            return false;
+        }
+
+        if(_pev_state == COLLECT){
+            // correlation has reached its maximum, but we need 1 more sample
+            _pev_state = ONE_MORE;
+            return false;
+        }
+        if(_pev_state == ONE_MORE){
+            // _pev_corr_idx++;
+            _pev_state = OPERATE;
+        }
+        // We reach here only if correlation > threshold and state = ONE_MORE || OPERATE
+        _pev_time_est = (_pev_corr_mag_hist[_pev_corr_idx - 1] + 2.0 * _pev_corr_mag_hist[_pev_corr_idx] + 3.0 * _pev_corr_mag_hist[_pev_corr_idx + 1])
+                        / (_pev_corr_mag_hist[_pev_corr_idx - 1] + _pev_corr_mag_hist[_pev_corr_idx] + _pev_corr_mag_hist[_pev_corr_idx + 1]) - 2.0;
+        _pev_phase_est = std::atan2(_pev_corr_hist[_pev_corr_idx].imag(), _pev_corr_hist[_pev_corr_idx].real());
+        _pev_corr_est = _pev_corr_idx + _pev_mark_delay;
+
+        _pev_state = FINISHED;
+
+        _pev_corr_idx += static_cast<size_t>(_sps + 0.5);
+        return true;
+    }
+
+    /**
      * @brief Operate the symbol recovery on one sample.
      * @param sample complex sample from input stream
      * @param output buffer having enough space for the output
      */
     int operate(const std::complex<double>& sample, std::complex<double>* output){
+        int n = 0; // number of samples written to the output in this cycle (decimation notifier)
         std::complex<double> agc_out = agc(sample);
-
         std::complex<double> fll_out = fll(agc_out);
 
-        /* PREAMBLE CORRELATION ESTIMATOR - NOT IMPLEMENTED */
-        
+        // preamble detected should be used only if the state is correct
+        bool detected = pev(fll_out);
 
-        
-        /***************************************************/
+        if(detected){
+            std::complex<double> pll_out = pll(fll_out, n);
+            output[0] = pll_out;
+        }
 
-        int n = 0;
-        std::complex<double> pll_out = pll(fll_out, n);
-        output[0] = pll_out;
-
-
+        #ifdef DEBUG
         _debug.curr = (_debug.curr + 1) % _debug.n;
-        // output[0] = fll_output;
-        // return n2;
+        #endif
         return n;
-        // return -1;
-        // return 0;
     }
 
     void reset(){
@@ -852,7 +914,7 @@ private:
         _pev_mod = new rectangular_modulator(_constel, _sps, _n_filts, _rolloff);
         const size_t preamble_len = 8;
         const size_t k = 8 / _constel->get_bps();
-        const std::bitset<8> preamble[preamble_len] = {0xAA, 0x00, 0xFE, 0x2E, 0xE2, 0xFC, 0x05, 0x70};
+        const std::bitset<8> preamble[preamble_len] = {0xAA, 0x00, 0xFE, 0x2E, 0x22, 0xFC, 0x05, 0x70};
         _pev_preamble = new size_t[k * preamble_len];
         _pev_preamble_size = k * preamble_len;
         for(size_t i = 0; i < preamble_len; ++i){
@@ -863,29 +925,33 @@ private:
         }
 
         // Setup the modulator sync word
-        _pev_sync_words = new std::complex<double>[_sps * _pev_preamble_size];
+        _pev_sync_size = _sps * _pev_preamble_size;
+        _pev_sync_words = new std::complex<double>[_pev_sync_size];
         for(size_t i = 0; i < _pev_preamble_size; ++i){
             _pev_mod->operate(_pev_preamble[i], _pev_sync_words + i * _sps);
         }
-        for(size_t i = 0; i < _sps * _pev_preamble_size; ++i){
+        for(size_t i = 0; i < _pev_sync_size; ++i){
             _pev_sync_words[i] = std::conj(_pev_sync_words[i]);
         }
-        std::reverse(_pev_sync_words, _pev_sync_words + _sps * _pev_preamble_size);
+        std::reverse(_pev_sync_words, _pev_sync_words + _pev_sync_size);
+        _pev_filter.update_taps(_pev_sync_words, _pev_sync_size);
+        _pev_corr_hist = new std::complex<double>[_pev_sync_size];
+        _pev_corr_mag_hist = new double[_pev_sync_size];
 
         _pev_mark_delay = 1;
         _pev_old_mark_delay = 1;
         _pev_threshold = 0.9;
         _pev_old_threshold = 0.9;
         _pev_pfa = -std::log(1.0 - _pev_threshold);
+        _pev_corr_idx = 0;
+
+        _pev_state = COLLECT;
 
         double accum = 0.0;
-        for(size_t i = 0; i < _sps * _pev_preamble_size; ++i){
+        for(size_t i = 0; i < _pev_sync_size; ++i){
             accum += std::abs(_pev_sync_words[i] * std::conj(_pev_sync_words[i]));
         }
         _pev_threshold = _pev_threshold * std::pow(accum, 2.0);
-
-        _pev_correlation =  new std::complex<double>[_sps * _pev_preamble_size];
-        _pev_filter.update_taps(_pev_sync_words, _sps * _pev_preamble_size);
     }
 
     void update_pll(){

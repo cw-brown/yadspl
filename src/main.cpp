@@ -32,7 +32,7 @@ int main(){
     using cpx = std::complex<double>;
     size_t sps = 2;
     size_t n_filt = 32;
-    size_t points = 250;
+    size_t points = 150;
 
     static float v = 0.0f;
     static float offset = 0.0f;
@@ -43,49 +43,42 @@ int main(){
     rectangular_modulator modulator(&constel, sps, n_filt, 0.35);
     firefighter recovery(&constel, sps, n_filt, 2.0*3.1415/100.0, 0.35);
 
-    // size_t preamble_len = recovery.get_preamble_size();
-    size_t preamble_len = 0;
-    size_t N = preamble_len + sps * points;
-
-    cpx* data = new cpx[N];
-    cpx* data_c = new cpx[N];
-
-    unsigned int* pattern = new unsigned int[points];
-
-    static int symb_delay = 12;
-
-    for(size_t i = 0; i < preamble_len; ++i){
-        auto point = recovery.get_preamble_points()[i];
-        modulator.operate(point, data + i * sps);
-        pattern[i] = point;
-    }
-
-    for(unsigned int i = preamble_len; i < points; ++i){
-        auto point = sig_gen.random_int_range(0, constel.get_size() - 1);
-        modulator.operate(point, data + i * sps);
-        pattern[i] = point;
-    }
-    double* data_fft = new double[N];
-    double* data_freq = new double[N];
-
-    compute_psd(data, N, data_fft, data_freq);
-
-    cpx* buffer = new cpx[sps];
-    cpx* output = new cpx[N];
-    double* output_fft = new double[N];
-    double* output_freq = new double[N];
-    double* real = new double[N];
-    double* imag = new double[N];
-
-    cpx* sync_words = recovery.get_sync_word();
+    size_t pre_len = recovery.get_preamble_size();
     size_t* preamble = recovery.get_preamble_points();
-    static size_t sync_size = sps * recovery.get_preamble_size();
-    double* sync_fft = new double[sync_size];
-    double* sync_freq = new double[sync_size];
+    size_t N = points + pre_len;
+    size_t* bin_data = new size_t[N];
+    size_t* bin_idx = new size_t[N];
 
-    unsigned int* out_pattern = new unsigned int[N];
+    cpx* input = new cpx[N * sps];
+    double* input_fft = new double[N * sps];
+    double* input_freq = new double[N * sps];
 
-    DEBUG_INTERFACE* interf = recovery.debug();
+    for(size_t i = 0; i < pre_len; ++i){
+        bin_data[i] = preamble[i];
+        modulator.operate(preamble[i], input + i * sps);
+        bin_idx[i] = i;
+    }
+    for(size_t i = pre_len; i < N; ++i){
+        size_t point = sig_gen.random_int_range(0, constel.get_size() - 1);
+        bin_data[i] = point;
+        modulator.operate(point, input + i * sps);
+        bin_idx[i] = i;
+    }
+    compute_psd(input, N * sps, input_fft, input_freq);
+
+    cpx* corr = new cpx[N * sps];
+    double* corr_mag = new double[N * sps];
+    for(size_t i = 0; i < N * sps; ++i){
+        corr[i] = recovery.preamble(input[i]);
+    }
+    for(size_t i = 0; i < N * sps; ++i){
+        corr_mag[i] = std::norm(corr[i]);
+    }
+
+    for(size_t i = 0; i < N * sps; ++i){
+        auto b = recovery.pev(input[i]);
+        if(b){break;}
+    }
 
 #if DO_WINDOW
     GLFWwindow* window = glfw_makeNewWindow(1920, 1080, "Yet Another DSP Library", true, true, true);
@@ -103,70 +96,24 @@ int main(){
         ImGui::Begin("Plottings", nullptr, topbarflags);
         if(ImGui::BeginTabBar("Main Tabs")){
         if(ImGui::BeginTabItem("Item 0")){
-
-            std::copy_n(data, N, data_c);
-
-            // for(size_t i = 0; i < points; ++i){
-            //     auto point = sig_gen.random_int_range(0, constel.get_size() - 1);
-            //     modulator.operate(point, data_c + i * sps);
-            //     pattern[i] = point;
-            // }
-
-            for(size_t i = 0; i < N; ++i){
-                channel.operate(data_c + i);
-            }
-            compute_psd(data_c, N, data_fft, data_freq);
-
-            size_t k = 0;
-            for(size_t i = 0; i < N; ++i){
-                size_t n = recovery.operate(data_c[i], buffer);
-                for(size_t j = 0; j < n; ++j){
-                    output[k] = buffer[j];
-                    out_pattern[k] = constel.decision(output[k]);
-                    k++;
-                }
-            }
-            compute_psd(output, N, output_fft, output_freq);
-
-            for(size_t i = 0; i < N; ++i){
-                real[i] = output[i].real();
-                imag[i] = output[i].imag();
-            }
-
-            recovery.reset();
-
-            ImGui::SliderFloat("Frequency Offset", &offset, 0.0, 1.0);
-            ImGui::SliderFloat("Noise Voltage", &v, 0.0, 1e-1, "%.5f");
-            ImGui::SliderInt("Sample Delay", &symb_delay, 0, 100);
-            channel.set_noise(v);
-            channel.set_offset(offset);
-
             if(ImPlot::BeginSubplots("Data", 1, 2, ImVec2(-1, 750))){
             if(ImPlot::BeginPlot("Spectrum")){
-                ImPlot::SetupAxesLimits(-0.5, 0.5, -30, 5);
-                ImPlot::PlotLine("Input", data_freq, data_fft, N);
-                ImPlot::PlotLine("Output", output_freq, output_fft, N);
+                ImPlot::PlotLine("", input_freq, input_fft, N * sps);
                 ImPlot::EndPlot();
             }
             if(ImPlot::BeginPlot("Time Data")){
-                ImPlot::SetupAxesLimits(0, points, -1.0 * static_cast<double>(constel.get_size() - 1), constel.get_size());
-                ImPlot::PlotLine("Input", pattern, points);
-                ImPlot::PlotLine("Output", out_pattern + symb_delay, points - symb_delay);
+                ImPlot::PlotLine("Preamble", bin_idx, bin_data, pre_len);
+                ImPlot::PlotLine("Data", bin_idx + pre_len, bin_data + pre_len, points);
                 ImPlot::EndPlot();
             }
             ImPlot::EndSubplots();
             }
             if(ImPlot::BeginSubplots("Debug", 1, 2, ImVec2(-1, 750))){
             if(ImPlot::BeginPlot("Constellation")){
-                ImPlot::SetupAxesLimits(-2, 2, -2, 2);
-                ImPlot::PlotScatter("", real + symb_delay, imag + symb_delay, N - symb_delay);
+                ImPlot::PlotLine("", corr_mag, N * sps);
                 ImPlot::EndPlot();
             }
             if(ImPlot::BeginPlot("Errors")){
-                ImPlot::SetupAxesLimits(0, interf->n, -2, 2);
-                ImPlot::PlotLine("PLL Error", interf->PLL_ERR_HIST, interf->n);
-                ImPlot::PlotLine("PLL Phase", interf->PLL_PHASE_HIST, interf->n);
-                ImPlot::PlotLine("PLL Frequency", interf->PLL_FREQ_HIST, interf->n);
                 ImPlot::EndPlot();
             }
             ImPlot::EndSubplots();
@@ -174,13 +121,10 @@ int main(){
             ImGui::EndTabItem();
         }
         if(ImGui::BeginTabItem("Items 1")){
-            compute_psd(sync_words, sync_size, sync_fft, sync_freq);
             if(ImPlot::BeginPlot("Plot 0", ImVec2(-1, 750))){
-                ImPlot::PlotLine("", preamble, recovery.get_preamble_size());
                 ImPlot::EndPlot();
             }
             if(ImPlot::BeginPlot("Plot 1", ImVec2(-1, 750))){
-                ImPlot::PlotLine("", sync_freq, sync_fft, sync_size);
                 ImPlot::EndPlot();
             }
             ImGui::EndTabItem();
