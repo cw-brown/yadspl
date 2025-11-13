@@ -59,4 +59,20 @@ struct Packet {
 
 };
 
+/**
+ * @brief Writes a single packet to an address
+ * @param to_write the packet to write
+ * @param position a pointer to the position to write the data
+ * @returns the number of bits that have been written
+ */
+size_t singlePacketToAddress(const Packet to_write, bool * position);
+
+/**
+ * @brief Writes a single packet to a vector
+ * @param to_write the packet to write
+ * @param buffer a pointer to the vector to write to
+ * @returns the number of bits that have been written
+ */
+size_t singlePacketToVector(const Packet to_write, std::vector<bool> * buffer);
+
 #endif
