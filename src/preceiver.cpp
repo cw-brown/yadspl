@@ -51,10 +51,20 @@ void PacketReceiver::tick() {
         
         case WAIT_DATA:
 
-            if(!dataPacketBuffer->empty()) {
+            if(!controlPacketBuffer->empty()) {
+                
+                state = CONTROL;
+
+            } else if(!dataPacketBuffer->empty()) {
 
                 state = UNPACKET;
+
             }
+            break;
+
+        case CONTROL:
+            
+            // Do things
             break;
 
         case UNPACKET:
@@ -106,4 +116,10 @@ void PacketReceiver::tick() {
 
             break;
     }
+}
+
+RState PacketReceiver::getState() {
+
+    return state;
+    
 }

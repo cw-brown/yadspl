@@ -101,10 +101,28 @@ void PacketTransmitter::tick() {
             }
             break;
 
+        case ENDING:
+            
+            toSend->push_back(pFormer.formTransactionEndPacket());
+            state = END;
+            break;
+
+        case END:
         default:
             
             break;
 
     }
+
+}
+
+void PacketTransmitter::end() {
+
+    state = ENDING;
+}
+
+TState PacketTransmitter::getState() {
+
+    return state;
 
 }

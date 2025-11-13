@@ -16,13 +16,15 @@
 #include "data_extractor.h"
 
 // State definitions
-enum State {
+enum TState {
     START,
     WAIT_ST,
     WAIT_DATA,
     FORM,
     SEND,
-    WAIT_ACK
+    WAIT_ACK,
+    ENDING,
+    END
 };
 
 /** 
@@ -35,7 +37,7 @@ class PacketTransmitter {
     /**
      * @brief The current state of the source control
      */
-    State state;
+    TState state;
 
     int8_t senderAddress;
 
@@ -106,6 +108,17 @@ class PacketTransmitter {
      * @brief Do next operation and if necessary update state
      */
     void tick();
+
+    /**
+     * @brief Immediately set the state to ending, to be processed on the next tick
+     */
+    void end();
+
+    /**
+     * @brief Report current state
+     * @returns the current state
+     */
+    TState getState();
 
 };
 

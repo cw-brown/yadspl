@@ -17,9 +17,10 @@
 #include "data_extractor.h"
 
 // State definitions
-enum State {
+enum RState {
     START,
     WAIT_DATA,
+    CONTROL,
     UNPACKET,
     SEND,
     OUT_BUFF,
@@ -35,7 +36,7 @@ class PacketReceiver {
     /**
      * @brief The current state of the source control
      */
-    State state;
+    RState state;
 
     int8_t senderAddress;
 
@@ -118,6 +119,12 @@ class PacketReceiver {
      * @brief Do next operation and if necessary update state
      */
     void tick();
+
+    /**
+     * @brief Report current state
+     * @returns the current state
+     */
+    RState getState();
 
 };
  
