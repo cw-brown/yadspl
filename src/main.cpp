@@ -22,63 +22,24 @@
 #include "ring.hpp"
 #include "polyphase.hpp"
 #include "graphics.hpp"
-#include "modem.hpp"
+#include "modem2.hpp"
 
 #include "fft.hpp"
 
 #define DO_WINDOW true
 
 int main(){
-    using cpx = std::complex<double>;
-    size_t sps = 2;
-    size_t n_filt = 32;
-    size_t points = 150;
 
-    static float v = 0.0f;
-    static float offset = 0.0f;
-
-    constellation_bpsk constel{};
-    noise<double> sig_gen{};
-    channel_model channel(offset, v);
-    rectangular_modulator modulator(&constel, sps, n_filt, 0.35);
-    firefighter recovery(&constel, sps, n_filt, 2.0*3.1415/100.0, 0.35);
-
-    size_t pre_len = recovery.get_preamble_size();
-    size_t* preamble = recovery.get_preamble_points();
-    size_t N = points + pre_len;
-    size_t* bin_data = new size_t[N];
-    size_t* bin_idx = new size_t[N];
-
-    cpx* input = new cpx[N * sps];
-    double* input_fft = new double[N * sps];
-    double* input_freq = new double[N * sps];
-
-    for(size_t i = 0; i < pre_len; ++i){
-        bin_data[i] = preamble[i];
-        modulator.operate(preamble[i], input + i * sps);
-        bin_idx[i] = i;
-    }
-    for(size_t i = pre_len; i < N; ++i){
-        size_t point = sig_gen.random_int_range(0, constel.get_size() - 1);
-        bin_data[i] = point;
-        modulator.operate(point, input + i * sps);
-        bin_idx[i] = i;
-    }
-    compute_psd(input, N * sps, input_fft, input_freq);
-
-    cpx* corr = new cpx[N * sps];
-    double* corr_mag = new double[N * sps];
-    for(size_t i = 0; i < N * sps; ++i){
-        corr[i] = recovery.preamble(input[i]);
-    }
-    for(size_t i = 0; i < N * sps; ++i){
-        corr_mag[i] = std::norm(corr[i]);
+    static size_t points = 1500;
+    static noise<double> sig_gen{};
+    static constellation_bpsk constel{};
+    std::complex<double>* outs = new std::complex<double>[points];
+    for(size_t i = 0; i < points; ++i){
+        auto point = sig_gen.random_int_range(0, constel.get_size() - 1);
+        outs[i] = constel.get_point(point);
     }
 
-    for(size_t i = 0; i < N * sps; ++i){
-        auto b = recovery.pev(input[i]);
-        if(b){break;}
-    }
+
 
 #if DO_WINDOW
     GLFWwindow* window = glfw_makeNewWindow(1920, 1080, "Yet Another DSP Library", true, true, true);
@@ -96,21 +57,56 @@ int main(){
         ImGui::Begin("Plottings", nullptr, topbarflags);
         if(ImGui::BeginTabBar("Main Tabs")){
         if(ImGui::BeginTabItem("Item 0")){
+            static int sps1 = 2;
+            static int sps2 = 7;
+            static int delay1 = 16;
+            static int delay2 = 16;
+
+            // double* taps = new double[sps1*delay1*2+1];
+            // size_t len = rrcos(sps1, delay1, 0.35, taps);
+            // double* taps2 = new double[2*sps2*delay2+1];
+            // size_t len2 = rrcos(sps2, delay2, 0.35, taps2);
+            auto prot = root_nyquist(sps1, sps1, 1.0, 0.35, 2*sps1*delay1+1);
+            auto prot2 = root_nyquist(sps2, sps2, 1.0, 0.35, 2*sps2*delay2+1);
+            fir_resampler<double, std::complex<double>> resamp(sps1, 1, prot.data(), prot.size());
+            fir_resampler<double, std::complex<double>> resamp2(1, sps2, prot2.data(), prot2.size());
+            // delete[] taps;
+            // delete[] taps2;
+
+            size_t n;
+            auto h = resamp.operate_n(outs, points, n);
+            double* fft = new double[n];
+            double* freq = new double[n];
+            compute_psd(h, n, fft, freq);
+
+            size_t k;
+            auto j = resamp2.operate_n(h, n, k);
+            double* real = new double[k];
+            double* imag = new double[k];
+            for(size_t i = 0; i < k; ++i){
+                real[i] = j[i].real();
+                imag[i] = j[i].imag();
+            }
+        
+            ImGui::SliderInt("Interp SPS", &sps1, 1, 32);
+            ImGui::SliderInt("Decim SPS", &sps2, 1, 32);
+            ImGui::SliderInt("Interp Delay", &delay1, 1, 64);
+            ImGui::SliderInt("Decim Delay", &delay2, 1, 64);
+
             if(ImPlot::BeginSubplots("Data", 1, 2, ImVec2(-1, 750))){
             if(ImPlot::BeginPlot("Spectrum")){
-                ImPlot::PlotLine("", input_freq, input_fft, N * sps);
+                ImPlot::PlotLine("", freq, fft, n);
+
                 ImPlot::EndPlot();
             }
             if(ImPlot::BeginPlot("Time Data")){
-                ImPlot::PlotLine("Preamble", bin_idx, bin_data, pre_len);
-                ImPlot::PlotLine("Data", bin_idx + pre_len, bin_data + pre_len, points);
+                ImPlot::PlotScatter("", real, imag, k);
                 ImPlot::EndPlot();
             }
             ImPlot::EndSubplots();
             }
             if(ImPlot::BeginSubplots("Debug", 1, 2, ImVec2(-1, 750))){
             if(ImPlot::BeginPlot("Constellation")){
-                ImPlot::PlotLine("", corr_mag, N * sps);
                 ImPlot::EndPlot();
             }
             if(ImPlot::BeginPlot("Errors")){
@@ -121,7 +117,10 @@ int main(){
             ImGui::EndTabItem();
         }
         if(ImGui::BeginTabItem("Items 1")){
+            static int arm = 0;
+            ImGui::SliderInt("Arm", &arm, 0, 1);
             if(ImPlot::BeginPlot("Plot 0", ImVec2(-1, 750))){
+                // ImPlot::PlotBars("", bank->arm(arm), bank->arm_size());
                 ImPlot::EndPlot();
             }
             if(ImPlot::BeginPlot("Plot 1", ImVec2(-1, 750))){

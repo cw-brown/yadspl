@@ -613,7 +613,8 @@ private:
         COLLECT, // Collect samples for correlation
         ONE_MORE, // PEV has found a point of correlation and needs one more sample
         OPERATE,
-        FINISHED
+        FINISHED,
+        WAIT
     } _pev_state;
 
     std::complex<double>* _pev_sync_words;
@@ -773,8 +774,15 @@ public:
         n = _pll_pfb.operate(input, _pll_output_buffer);
         std::complex<double> pll_output = 0.0;
         if(n != 0){
-            std::complex<double> pll_nco = std::polar(1.0, -_pll_phase);
+            if(_pev_state == FINISHED){
+                // pev has a phase estimate for us, so use it
+                pll_output = _pll_output_buffer[0] * std::polar(1.0, -_pev_phase_est);
+                _pev_state = WAIT;
+            } 
+            else{
+                std::complex<double> pll_nco = std::polar(1.0, -_pll_phase);
             pll_output = *_pll_output_buffer * pll_nco;
+            }
 
             _pll_err = _constel->phase_error_detector(pll_output);
 
@@ -795,25 +803,12 @@ public:
     }
 
     /**
-     * @brief Run the preamble detector on a single input
-     * @param input 
-     * @return double
-     */
-    std::complex<double> preamble(std::complex<double> input){
-        // Runs the correlated filter and returns the squared magnitude
-        _pev_filter.feed_sample(input);
-        std::complex<double> out = _pev_filter.operate();
-        _pev_filter.increment();
-        return out;
-    }
-
-    /**
      * @brief Runs the PEV on an input, which may modify the internal state and pass timing and phase estimates to a section
      * @param input 
      * @return true if the PEV has found an estimate
      */
     bool pev(std::complex<double> input){
-        if(_pev_state == FINISHED) return true;
+        if(_pev_state == FINISHED || _pev_state == WAIT) return true;
 
         _pev_filter.feed_sample(input);
         std::complex<double> pev_corr = _pev_filter.operate();
@@ -865,10 +860,13 @@ public:
         // preamble detected should be used only if the state is correct
         bool detected = pev(fll_out);
 
-        if(detected){
-            std::complex<double> pll_out = pll(fll_out, n);
+        // if(detected){
+        //     // the pll will take the estimate given
+        //     std::complex<double> pll_out = pll(fll_out, n);
+        //     output[0] = pll_out;
+        // }
+        std::complex<double> pll_out = pll(fll_out, n);
             output[0] = pll_out;
-        }
 
         #ifdef DEBUG
         _debug.curr = (_debug.curr + 1) % _debug.n;
@@ -881,6 +879,8 @@ public:
         _fll_lowerband_filter.reset();
         _pll_pfb.reset();
         _pev_filter.reset();
+        _pev_state = COLLECT;
+        _pev_corr_idx = 0;
     }
 
     void set_pll_alpha(double alpha){_pll_alpha = alpha;}
