@@ -63,7 +63,7 @@ int main() {
     }
 
     // Transmit loop
-    while(dataReceived->size() != sendData->size()) {
+    while(rec.getState() != END) {
 
         send.tick();
 
@@ -88,6 +88,7 @@ int main() {
     for(int i = 0; i < dataReceived->size(); i++) {
 
         std::cout << (dataReceived->at(i) == sendData->at(i));
+
     }
 
 }

@@ -48,7 +48,7 @@ void PacketReceiver::tick() {
 
             }
             break;
-        
+
         case WAIT_DATA:
 
             if(!controlPacketBuffer->empty()) {
@@ -64,7 +64,57 @@ void PacketReceiver::tick() {
 
         case CONTROL:
             
-            // Do things
+            switch ((controlPacketBuffer->back()).controlCode) {
+                
+                // Busy not implemented
+                /*case 0b0010:
+                    
+                    // Busy start
+                    toSend->push_back(pFormer.formBusyAcceptPacket());
+                    state = BUSY;
+                    break;*/
+
+                // Frequency change not implemented
+                /*case 0b0100:
+
+                // Center frequency change
+                break;*/
+
+                case 0b0101:
+
+                    // Modulation Change
+                    if((controlPacketBuffer->back()).erc) {
+
+                        toSend->push_back(pFormer.formGeneralChannelAcknowledge());
+                        modulationType = ((controlPacketBuffer->back()).data).front();
+
+                    }
+                    state = WAIT_DATA;
+                    break;
+
+                // Transfer not implemented
+                /*case 1010:
+                    
+                    // Transfer
+                    break;*/
+
+                case 1011:
+                case 1111:
+
+                    // Ended or Dropped
+                    state = ENDING;
+                    break;
+
+                // Unknown control packet, so do nothing
+                default:
+                    
+                    break;
+
+                
+            }
+
+            // Remove processed control packet
+            controlPacketBuffer->pop_back();
             break;
 
         case UNPACKET:
@@ -112,6 +162,14 @@ void PacketReceiver::tick() {
             state = START;
             break;
 
+        case ENDING:
+            
+            dExtractor.extractGoodPackets(receiveData);
+            toSend->push_back(pFormer.formTransactionEndAcknowledge());
+            state = END;
+            break;
+
+        case END:
         default:
 
             break;
@@ -122,4 +180,16 @@ RState PacketReceiver::getState() {
 
     return state;
     
+}
+
+float PacketReceiver::getCenterFrequency() {
+
+    return centerFreq;
+
+}
+
+uint8_t PacketReceiver::getModulationType() {
+
+    return modulationType;
+
 }

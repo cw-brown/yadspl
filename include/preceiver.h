@@ -24,6 +24,8 @@ enum RState {
     UNPACKET,
     SEND,
     OUT_BUFF,
+    ENDING,
+    END
 };
 
 /** 
@@ -125,6 +127,18 @@ class PacketReceiver {
      * @returns the current state
      */
     RState getState();
+
+    /**
+     * @brief Reports the current center frequency
+     * @returns The current center frequency
+     */
+    float getCenterFrequency();
+
+    /**
+     * @brief Reports the current modulation type
+     * @returns The current modulation type index, per SCHP5
+     */
+    uint8_t getModulationType();
 
 };
  
