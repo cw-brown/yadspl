@@ -29,17 +29,36 @@
 #define DO_WINDOW true
 
 int main(){
-
-    static size_t points = 1500;
+    size_t sps = 4;
+    static size_t n = 250;
+    static float nois = 0.0;
+    static float offset = 0.0;
     static noise<double> sig_gen{};
     static constellation_bpsk constel{};
-    std::complex<double>* outs = new std::complex<double>[points];
-    for(size_t i = 0; i < points; ++i){
-        auto point = sig_gen.random_int_range(0, constel.get_size() - 1);
-        outs[i] = constel.get_point(point);
+    static channel_model channel(offset, nois);
+    digital_modem<double> modem(sps, 2.0*3.1/100.0, &constel);
+    size_t m = modem.preamble_len();
+
+    uint8_t* test_data = new uint8_t[n]; 
+    // size_t* indices = new size_t[n]; std::iota(indices, indices + n, 0);
+    for(size_t i = 0; i < n; ++i){
+        test_data[i] = static_cast<uint8_t>(sig_gen.random_int_range(0, 255));
     }
 
+    size_t total = m + n * (8 / constel.get_bps());
+    size_t* points = new size_t[total];
+    size_t k;
+    modem.append_n(test_data, n, points, k);
+    size_t* indx = new size_t[k];
+    std::iota(indx, indx + k, 0);
 
+    size_t expected = (m * sps) + (n * 8 / constel.get_bps()) * sps;
+    std::complex<double>* buffer = new std::complex<double>[expected];
+    double* fft = new double[expected];
+    double* freq = new double[expected];
+
+    size_t* outputs = new size_t[total];
+    size_t o;
 
 #if DO_WINDOW
     GLFWwindow* window = glfw_makeNewWindow(1920, 1080, "Yet Another DSP Library", true, true, true);
@@ -57,50 +76,33 @@ int main(){
         ImGui::Begin("Plottings", nullptr, topbarflags);
         if(ImGui::BeginTabBar("Main Tabs")){
         if(ImGui::BeginTabItem("Item 0")){
-            static int sps1 = 2;
-            static int sps2 = 7;
-            static int delay1 = 16;
-            static int delay2 = 16;
+            ImGui::SliderFloat("Noise", &nois, 0.0, 0.5);
+            ImGui::SliderFloat("Offset", &offset, 0.0, 1.0);
+            channel.set_noise(nois);
+            channel.set_offset(offset);
+            ImGui::Text((std::string("Time Estimate: ") + std::to_string(modem.time_est())).c_str());
+            ImGui::Text((std::string("Phase Estimate: ") + std::to_string(modem.phase_est())).c_str());
 
-            // double* taps = new double[sps1*delay1*2+1];
-            // size_t len = rrcos(sps1, delay1, 0.35, taps);
-            // double* taps2 = new double[2*sps2*delay2+1];
-            // size_t len2 = rrcos(sps2, delay2, 0.35, taps2);
-            auto prot = root_nyquist(sps1, sps1, 1.0, 0.35, 2*sps1*delay1+1);
-            auto prot2 = root_nyquist(sps2, sps2, 1.0, 0.35, 2*sps2*delay2+1);
-            fir_resampler<double, std::complex<double>> resamp(sps1, 1, prot.data(), prot.size());
-            fir_resampler<double, std::complex<double>> resamp2(1, sps2, prot2.data(), prot2.size());
-            // delete[] taps;
-            // delete[] taps2;
-
-            size_t n;
-            auto h = resamp.operate_n(outs, points, n);
-            double* fft = new double[n];
-            double* freq = new double[n];
-            compute_psd(h, n, fft, freq);
-
-            size_t k;
-            auto j = resamp2.operate_n(h, n, k);
-            double* real = new double[k];
-            double* imag = new double[k];
-            for(size_t i = 0; i < k; ++i){
-                real[i] = j[i].real();
-                imag[i] = j[i].imag();
+            size_t u;
+            modem.modulate_n(test_data, n, buffer, u);
+            for(size_t i = 0; i < expected; ++i){
+                channel.operate(buffer + i);
             }
-        
-            ImGui::SliderInt("Interp SPS", &sps1, 1, 32);
-            ImGui::SliderInt("Decim SPS", &sps2, 1, 32);
-            ImGui::SliderInt("Interp Delay", &delay1, 1, 64);
-            ImGui::SliderInt("Decim Delay", &delay2, 1, 64);
+            compute_psd(buffer, u, fft, freq);
+
+            modem.detect_n(buffer, expected, buffer, u);
+
+            modem.downsample_n(buffer, expected, outputs, o);
+    
 
             if(ImPlot::BeginSubplots("Data", 1, 2, ImVec2(-1, 750))){
             if(ImPlot::BeginPlot("Spectrum")){
-                ImPlot::PlotLine("", freq, fft, n);
-
+                ImPlot::PlotLine("", freq, fft, u);
                 ImPlot::EndPlot();
             }
             if(ImPlot::BeginPlot("Time Data")){
-                ImPlot::PlotScatter("", real, imag, k);
+                ImPlot::PlotStairs("Preamble", indx, points, m);
+                ImPlot::PlotStairs("Data", indx + m, points + m, k - m);
                 ImPlot::EndPlot();
             }
             ImPlot::EndSubplots();

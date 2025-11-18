@@ -9,7 +9,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 if(MSVC)
     add_compile_options(/W4 /permissive-)
 else()
-    add_compile_options(-Wall -Wextra -Wpedantic -Og -fconcepts-diagnostics-depth=2 -mcrc32)
+    add_compile_options(-Wall -Wextra -Wpedantic -fconcepts-diagnostics-depth=2 -mcrc32)
 endif()
 
 find_path(FFTW3_INCLUDE_DIR fftw3.h HINTS "C:/msys64/ucrt64/include")
