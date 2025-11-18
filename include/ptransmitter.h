@@ -19,7 +19,7 @@
 enum TState {
     START,
     WAIT_ST,
-    WAIT_DATA,
+    BUFF_DATA,
     FORM,
     SEND,
     WAIT_ACK,

@@ -63,7 +63,7 @@ int main() {
     }
 
     // Transmit loop
-    while(rec.getState() != END) {
+    while(rec.getState() != REND) {
 
         send.tick();
 

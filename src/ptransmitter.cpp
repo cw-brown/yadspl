@@ -43,12 +43,12 @@ void PacketTransmitter::tick() {
 
             if(!controlPacketBuffer->empty() && (*(controlPacketBuffer->end()-1)).controlCode == 0b1000) {
 
-                state = WAIT_DATA;
+                state = BUFF_DATA;
 
             }
             break;
 
-        case WAIT_DATA:
+        case BUFF_DATA:
 
             if(toSendData->size() >= dataLength) {
 
@@ -87,7 +87,7 @@ void PacketTransmitter::tick() {
 
                 } else {
 
-                    state = WAIT_DATA;
+                    state = BUFF_DATA;
                     
                 }
 

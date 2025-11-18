@@ -23,7 +23,7 @@ PacketReceiver::PacketReceiver(
     dExtractor(arq_buffer, ack_buffer, data_packet_buffer),
     receiveData(receive_data),
     toSend(to_send),
-    state(START),
+    state(RSTART),
     sequenceNumber(0) {
 
     dataPackets = new std::vector<Packet>;
@@ -38,7 +38,7 @@ void PacketReceiver::tick() {
 
     switch (state) {
 
-        case START:
+        case RSTART:
             
             // Wait for source to intiate transaction
             if(!controlPacketBuffer->empty() && ((*(controlPacketBuffer->end()-1)).controlCode == 0b1000 || (*(controlPacketBuffer->end()-1)).controlCode == 0b1001)) {
@@ -102,7 +102,7 @@ void PacketReceiver::tick() {
                 case 1111:
 
                     // Ended or Dropped
-                    state = ENDING;
+                    state = RENDING;
                     break;
 
                 // Unknown control packet, so do nothing
@@ -159,17 +159,17 @@ void PacketReceiver::tick() {
         case OUT_BUFF:
             
             dExtractor.extractGoodPackets(receiveData);
-            state = START;
+            state = RSTART;
             break;
 
-        case ENDING:
+        case RENDING:
             
             dExtractor.extractGoodPackets(receiveData);
             toSend->push_back(pFormer.formTransactionEndAcknowledge());
-            state = END;
+            state = REND;
             break;
 
-        case END:
+        case REND:
         default:
 
             break;

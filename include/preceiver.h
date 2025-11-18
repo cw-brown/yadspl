@@ -18,14 +18,13 @@
 
 // State definitions
 enum RState {
-    START,
+    RSTART,
     WAIT_DATA,
     CONTROL,
     UNPACKET,
-    SEND,
     OUT_BUFF,
-    ENDING,
-    END
+    RENDING,
+    REND
 };
 
 /** 
