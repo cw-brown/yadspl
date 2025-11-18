@@ -9,98 +9,130 @@
 #include <algorithm>
 #include <utility>
 
+#include <fftw3.h>
+
 #include "implot.h"
 
 #include "helper_funcs.h"
 #include "fir_filter.hpp"
-// #include "iir_filter.hpp"
-// #include "polynomial.hpp"
 #include "noise.hpp"
 #include "yadpsl_math.hpp"
 #include "constellations.hpp"
 #include "symbol_rec.hpp"
 #include "ring.hpp"
-// #include "constellations2.hpp"
+#include "polyphase.hpp"
+#include "graphics.hpp"
+#include "modem2.hpp"
 
-// #include "filter.hpp"
-
-void key_call(GLFWwindow* window, int key, int, int action, int){
-    if(key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
-        glfwSetWindowShouldClose(window, GLFW_TRUE);
-}
+#include "fft.hpp"
 
 #define DO_WINDOW true
 
 int main(){
-    constellation_16qam constel{};
 
-    symbol_recovery rec(8, 3.141/50.0, 32, 1.5, constel, 0.35);
-    auto bank = rec.get_bank();
+    static size_t points = 1500;
+    static noise<double> sig_gen{};
+    static constellation_bpsk constel{};
+    std::complex<double>* outs = new std::complex<double>[points];
+    for(size_t i = 0; i < points; ++i){
+        auto point = sig_gen.random_int_range(0, constel.get_size() - 1);
+        outs[i] = constel.get_point(point);
+    }
 
-    noise<double> sigGen;
 
-    std::ring<double> realPart(1024);
-    std::ring<double> imagPart(1024);
 
-    if(DO_WINDOW){
+#if DO_WINDOW
     GLFWwindow* window = glfw_makeNewWindow(1920, 1080, "Yet Another DSP Library", true, true, true);
     ImPlot::CreateContext();
     glfwSetKeyCallback(window, key_call);
-
 
     while(!glfwWindowShouldClose(window)){
         glfw_frame();
 
         ImGui::SetNextWindowPos(ImVec2(0, 0));
         ImGui::SetNextWindowSize(ImVec2(ImGui::GetIO().DisplaySize.x, ImGui::GetIO().DisplaySize.y));
-        ImGuiWindowFlags topbarflags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoCollapse;
-        ImPlotAxisFlags axisflags = ImPlotAxisFlags_AutoFit;
-
-        // Start to make data
-        auto point = sigGen.randomConstellationPoint(constel);
-        realPart.push_back(point.real());
-        imagPart.push_back(point.imag());
-        
-
+        ImGuiWindowFlags topbarflags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize 
+            | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoCollapse;
+    
         ImGui::Begin("Plottings", nullptr, topbarflags);
-        ImGui::BeginTabBar("Main Tabs");
-        if(ImGui::BeginTabItem("Test Data")){
-            if(ImPlot::BeginPlot("Testing Data", ImVec2(-1, 700))){
-                ImPlot::SetupAxesLimits(-1.5, 1.5, -1.5, 1.5);
-                ImPlot::PlotScatter("Test IQ", realPart.data(), imagPart.data(), realPart.size());
+        if(ImGui::BeginTabBar("Main Tabs")){
+        if(ImGui::BeginTabItem("Item 0")){
+            static int sps1 = 2;
+            static int sps2 = 7;
+            static int delay1 = 16;
+            static int delay2 = 16;
+
+            // double* taps = new double[sps1*delay1*2+1];
+            // size_t len = rrcos(sps1, delay1, 0.35, taps);
+            // double* taps2 = new double[2*sps2*delay2+1];
+            // size_t len2 = rrcos(sps2, delay2, 0.35, taps2);
+            auto prot = root_nyquist(sps1, sps1, 1.0, 0.35, 2*sps1*delay1+1);
+            auto prot2 = root_nyquist(sps2, sps2, 1.0, 0.35, 2*sps2*delay2+1);
+            fir_resampler<double, std::complex<double>> resamp(sps1, 1, prot.data(), prot.size());
+            fir_resampler<double, std::complex<double>> resamp2(1, sps2, prot2.data(), prot2.size());
+            // delete[] taps;
+            // delete[] taps2;
+
+            size_t n;
+            auto h = resamp.operate_n(outs, points, n);
+            double* fft = new double[n];
+            double* freq = new double[n];
+            compute_psd(h, n, fft, freq);
+
+            size_t k;
+            auto j = resamp2.operate_n(h, n, k);
+            double* real = new double[k];
+            double* imag = new double[k];
+            for(size_t i = 0; i < k; ++i){
+                real[i] = j[i].real();
+                imag[i] = j[i].imag();
+            }
+        
+            ImGui::SliderInt("Interp SPS", &sps1, 1, 32);
+            ImGui::SliderInt("Decim SPS", &sps2, 1, 32);
+            ImGui::SliderInt("Interp Delay", &delay1, 1, 64);
+            ImGui::SliderInt("Decim Delay", &delay2, 1, 64);
+
+            if(ImPlot::BeginSubplots("Data", 1, 2, ImVec2(-1, 750))){
+            if(ImPlot::BeginPlot("Spectrum")){
+                ImPlot::PlotLine("", freq, fft, n);
+
                 ImPlot::EndPlot();
+            }
+            if(ImPlot::BeginPlot("Time Data")){
+                ImPlot::PlotScatter("", real, imag, k);
+                ImPlot::EndPlot();
+            }
+            ImPlot::EndSubplots();
+            }
+            if(ImPlot::BeginSubplots("Debug", 1, 2, ImVec2(-1, 750))){
+            if(ImPlot::BeginPlot("Constellation")){
+                ImPlot::EndPlot();
+            }
+            if(ImPlot::BeginPlot("Errors")){
+                ImPlot::EndPlot();
+            }
+            ImPlot::EndSubplots();
             }
             ImGui::EndTabItem();
         }
-        if(ImGui::BeginTabItem("Test Feature")){
-            if(ImPlot::BeginPlot("Stem", ImVec2(-1, 700))){
-                ImPlot::SetupAxis(ImAxis_X1, "Sample", axisflags);
-                ImPlot::SetupAxis(ImAxis_Y1, "Amplitude", axisflags);
-                ImPlot::PlotBars("FIR Filter", bank.get_prototype().data(), bank.get_prototype().size());
-                ImPlot::EndPlot();
-            }
-            ImGui::EndTabItem();
-        }
-        if(ImGui::BeginTabItem("Split Filter")){
+        if(ImGui::BeginTabItem("Items 1")){
             static int arm = 0;
-            ImGui::SliderInt("Arm Number", &arm, 0, bank.get_size()-1);
-            auto s = bank.get_arm(arm);
-            if(ImPlot::BeginPlot("Normal", ImVec2(-1, 700))){
-                ImPlot::SetupAxis(ImAxis_X1, "Sample", axisflags);
-                ImPlot::SetupAxis(ImAxis_Y1, "Amplitude", axisflags);
-                ImPlot::PlotBars("Arm", s.taps().data(), s.size());
+            ImGui::SliderInt("Arm", &arm, 0, 1);
+            if(ImPlot::BeginPlot("Plot 0", ImVec2(-1, 750))){
+                // ImPlot::PlotBars("", bank->arm(arm), bank->arm_size());
                 ImPlot::EndPlot();
             }
-            auto d = bank.get_deriv_arm(arm);
-            if(ImPlot::BeginPlot("Derivative", ImVec2(-1, 700))){
-                ImPlot::SetupAxis(ImAxis_X1, "Sample", axisflags);
-                ImPlot::SetupAxis(ImAxis_Y1, "Amplitude", axisflags);
-                ImPlot::PlotBars("Arm", d.taps().data(), d.size());
+            if(ImPlot::BeginPlot("Plot 1", ImVec2(-1, 750))){
                 ImPlot::EndPlot();
             }
+            ImGui::EndTabItem();
+        }
+        if(ImGui::BeginTabItem("Items 2")){
             ImGui::EndTabItem();
         }
         ImGui::EndTabBar();
+        }
         ImGui::End();
 
         glfw_render(window);
@@ -108,7 +140,7 @@ int main(){
 
     glfw_cleanup(window);
     ImPlot::DestroyContext();
-    }
+#endif
     return 0;
 }
 

@@ -17,208 +17,122 @@
 #include <numeric>
 #include <cmath>
 
-/**
- * @brief Returns the taps for a root nyquist filter.
- * @param gain total gain
- * @param fs sampling frequency
- * @param sr symbol rate (symbols/s)
- * @param alpha excess bandwidth/rolloff 
- * @param n number of taps
- * @return std::vector<double> 
- */
-std::vector<double> root_nyquist(const double& gain, const double& fs, const double& sr, const double& alpha, const size_t& n){
-    if(gain <= 0.0) throw std::domain_error("make_nyquist: gain cannot be less than 0");
-    if(alpha <= 0.0 || alpha > 1.0) throw std::domain_error("make_nyquist: rolloff must be in range (0, 1]");
-
-    const size_t n_taps = n | 1;
-    std::vector<double> taps(n_taps, 0.0);
-    double power = 0.0;
-    const double sps = fs/sr;
-    const double PI = std::numbers::pi;
-
-    for(size_t i = 0; i < n_taps; ++i){
-        double num, denom;
-        double xidx = (double)i - (double)n_taps/2.0;
-        double x1 = PI*xidx/(double)sps;
-        double x2 = 4.0*alpha*xidx/(double)sps;
-        double x3 = std::pow(x2, 2.0) - 1.0;
-
-        if(std::abs(x3) >= 1.0e-5){
-            if(i != n_taps/2){
-                num = std::cos((1.0 + alpha)*x1) 
-                    + std::sin((1.0 - alpha)*x1)/(4.0*alpha*xidx/(double)sps);
-            }
-            else{
-                num = std::cos((1.0 + alpha)*x1)
-                    + (1.0 - alpha)*PI/(4.0*alpha);
-            }
-            denom = x3*PI;
-        }
-        else{
-            if(alpha == 1.0){
-                taps[i] = -1.0;
-                power += taps[i];
-                continue;
-            }
-            x3 = (1.0 - alpha)*x1;
-            x2 = (1.0 + alpha)*x1;
-            num = std::sin(x2)*(1.0 + alpha)*PI
-                - std::cos(x3)*((1.0 - alpha)*PI*(double)sps)/(4.0*alpha*xidx)
-                + std::sin(x3)*std::pow((double)sps, 2.0)/(4.0*alpha*std::pow(xidx, 2.0));
-            denom = -32.0*PI*std::pow(alpha, 2.0)*xidx/(double)sps;
-        }
-        taps[i] = 4.0*alpha*num/denom;
-        power += taps[i];
-    }
-    for(size_t i = 0; i < n_taps; ++i){
-        taps[i] = taps[i]*gain/power;
-    }
-    return taps;
-}
+#include "polyphase.hpp"
 
 /**
- * @brief Container class for taps of an FIR filter.
+ * @brief 
  * 
  */
-class fir_taps{
+class frequency_recovery{
 private:
-    std::vector<double> _taps;
-    size_t _n;
-    std::vector<std::complex<double>> _history;
-    size_t _curr = 0;
-public:
-    fir_taps(const std::vector<double>& taps, const size_t& n): _taps(taps), _n(n), _history(n, 0.0){}
-    std::complex<double> filter1(const std::complex<double>& sample){
-        std::complex<double> accum(0.0, 0.0);
-        _history[_curr] = sample;
-        size_t idx = _curr;
+    size_t _sps; // samples per symbol
+    double _rolloff; // input filter roll-off
+    double _bandwidth; // loop bandwidth
+    size_t _n; // prototype filter size
+
+    double _phase;
+    double _freq;
+    double _max_freq;
+    double _min_freq;
+    double _alpha;
+    double _beta;
+
+    complex_taps _lower_band;
+    complex_taps _upper_band;
+
+    static constexpr double PI = std::numbers::pi;
+
+    double sinc(double x){
+        if(x > -1e-6 && x < 1e-6) return 0.0;
+        else return std::sin(PI * x) / (PI * x);
+        // return x == 0.0 ? 1.0 : (std::sin(PI * x) / (PI * x));
+    }
+
+    void update_filter(){
+        int M = std::round(_n / _sps);
+        double pow = 0.0;
+
+        std::vector<double> baseband(_n);
         for(size_t i = 0; i < _n; ++i){
-            accum += _taps[i]*_history[idx];
-            if(idx == 0) idx = _history.size() - 1;
-            else idx -= 1;
+            const double k = -M + i * 2.0 / _sps;
+            const double pos = _rolloff * k;
+            const double tap = sinc(pos - 0.5) + sinc(pos + 0.5);
+            pow += std::pow(tap, 2.0);
+            baseband[i] = tap;
         }
-        _curr = (_curr + 1)%_history.size();
-        return accum;
-    }
-    void update_taps(const std::vector<double>& taps){_taps = taps; _n = taps.size();}
 
-    void reset(){
-        _history.assign(_n, 0.0);
-        _curr = 0;
+        std::vector<std::complex<double>> _upper(_n);
+        std::vector<std::complex<double>> _lower(_n);
+
+        int N = (baseband.size() - 1) / 2;
+        for(size_t i = 0; i < _n; ++i){
+            const double tap = baseband[i] / pow;
+            const double k = (static_cast<int>(i) - N) * 0.5 / _sps;
+            size_t idx = _n - i - 1;
+            _lower[idx] = std::polar(tap, -2.0 * PI * (1.0 + _rolloff) * k);
+            _upper[idx] = std::conj(_lower[_n - i - 1]);
+        }
+        std::reverse(_lower.begin(), _lower.end());
+        _lower_band.update_taps(_lower);
+        _upper_band.update_taps(_upper);
+    }
+public:
+    frequency_recovery(const size_t& sps, const double& roll_off, const double& loop_bw, const size_t& filter_size)
+        : _sps(sps), _rolloff(roll_off), _bandwidth(loop_bw), _n(filter_size){
+        // Set up control variables and gains
+        _phase = 0.0;
+        _freq = 0.0;
+        _min_freq = -4.0 * PI / _sps;
+        _max_freq = 4.0 * PI / _sps;
+        _beta = 8.0 * PI * _bandwidth / _sps;
+        update_filter();
     }
 
-    std::vector<double> taps() const{return _taps;}
-    size_t size() const{return _n;}
+    size_t sps() const{return _sps;}
+    double max_freq() const{return _max_freq;}
+    double min_freq() const{return _min_freq;}
+    double beta() const{return _beta;}
+    double phase() const{return _phase;}
+    double frequency() const{return _freq;}
+
+    complex_taps upper_band() const{return _upper_band;}
+    complex_taps lower_band() const{return _upper_band;}
+
+    std::vector<std::complex<double>> operate(const std::vector<std::complex<double>>& input){
+        size_t n = input.size();
+        std::vector<std::complex<double>> output(n, 0.0);
+        for(size_t i = 0; i < n; ++i){
+            std::complex<double> nco = std::polar(1.0, _phase);
+            output[i] = input[i] * nco;
+
+            std::complex<double> upper = _lower_band.filter1(output[i]);
+            std::complex<double> lower = _upper_band.filter1(output[i]);
+
+            double err = std::norm(lower) - std::norm(upper);
+
+            _freq += _beta * err;
+            _phase += _freq;
+
+            if(_phase >= 2.0 * PI) _phase = std::fmod(_phase, 2.0 * PI);
+            if(_phase <  -2.0 * PI) _phase = std::fmod(_phase, -2.0 * PI);
+
+            _freq = _freq > _max_freq ? _max_freq : _freq;
+            _freq = _freq < _min_freq ? _min_freq : _freq;
+        }
+        return output;
+    }
+
 };
 
-/**
- * @brief polyphase_filter_bank is an internal class of symbol recovery that peforms as a polyphase filter bank. It is made with a prototype, 
- * usually a root nyquist filter.
- */
-class polyphase_filter_bank{
-private:
-    size_t _n; // number of arms of the bank
-    size_t _taps_per_filter;
-    std::vector<fir_taps> _filters;
-    std::vector<fir_taps> _deriv_filters;
-    std::vector<double> _prototype;
-    std::vector<double> _deriv_prototype;
 
-    void set_taps(){
-        std::vector<double> prot_filled(_prototype);
-        while(prot_filled.size() < _n * _taps_per_filter) prot_filled.push_back(0.0);
-        for(size_t i = 0; i < _n; ++i){
-            std::vector<double> tmp(_taps_per_filter, 0.0);
-            for(size_t j = 0; j < _taps_per_filter; ++j){
-                tmp[j] = prot_filled[i + j*_n];
-            }
-            _filters[i].update_taps(tmp);
-        }
-
-        std::vector<double> deriv_filled(_deriv_prototype);
-        while(deriv_filled.size() < _n * _taps_per_filter) deriv_filled.push_back(0.0);
-        for(size_t i = 0; i < _n; ++i){
-            std::vector<double> tmp(_taps_per_filter, 0.0);
-            for(size_t j = 0; j < _taps_per_filter; ++j){
-                tmp[j] = deriv_filled[i + j*_n];
-            }
-            _deriv_filters[i].update_taps(tmp);
-        }
-    };
-
-    void make_derivative(){
-        _deriv_prototype.reserve(_prototype.size());
-        _deriv_prototype.push_back(0.0);
-        std::vector<double> diff{-1.0, 0.0, 1.0};
-        double power = 0.0;
-        for(size_t i = 0; i < _prototype.size() - 2; ++i){
-            double accum = 0.0;
-            for(size_t j = 0; j < 3; ++j){
-                accum += diff[j]*_prototype[i + j];
-            }
-            _deriv_prototype.push_back(accum);
-            power += std::abs(accum);
-        }
-        _deriv_prototype.push_back(0.0);
-        for(size_t i = 0; i < _deriv_prototype.size(); ++i){
-            _deriv_prototype[i] *= _n/power;
-        }
-    };
-public:
-    polyphase_filter_bank(): _n(0), _taps_per_filter(0){}
-    constexpr polyphase_filter_bank(const std::vector<double>& prototype, const size_t& arms){
-        update(prototype, arms);
-    }
-
-    size_t get_size() const{return _n;}
-    size_t get_taps_per_arm() const{return _taps_per_filter;}
-    fir_taps get_arm(const size_t& idx) const{return _filters.at(idx);}
-    fir_taps get_deriv_arm(const size_t& idx) const{return _deriv_filters.at(idx);}
-    std::vector<double> get_prototype() const{return _prototype;}
-    std::vector<double> get_deriv_prototype() const{return _deriv_prototype;}
-
-    std::complex<double> filter(const std::complex<double>& sample, const size_t& arm){
-        return _filters[arm].filter1(sample);
-    }
-    std::complex<double> deriv_filter(const std::complex<double>& sample, const size_t& arm){
-        return _deriv_filters[arm].filter1(sample);
-    }
-
-    constexpr void update(const std::vector<double>& prototype, const size_t& arms){
-        _n = arms;
-        _prototype = prototype;
-        make_derivative();
-
-        // Set up our tap vectors
-        _taps_per_filter = std::ceil(prototype.size()/_n);
-        _filters.reserve(_n);
-        _deriv_filters.reserve(_n);
-        fir_taps tmp_taps(std::vector<double>(1, 0.0), 1);
-        for(size_t i = 0; i < _n; ++i){
-            _filters.emplace_back(tmp_taps);
-            _deriv_filters.emplace_back(tmp_taps);
-        }
-
-        set_taps();
-    }
-
-    void clear(){
-        _filters.clear();
-        _deriv_filters.clear();
-        _prototype.clear();
-        _deriv_prototype.clear();
-    }
-};
-
-class symbol_recovery{
+class phase_recovery{
 private:
     // *** Storage Parameters ***
     size_t _sps;
     double _bandwidth;
     double _filter_bandwidth;
-    size_t _n_filters;
+    int _n_filters;
     polyphase_filter_bank _bank;
-    constellation _constel;
 
     // *** Loop Parameters ***
     double _phase; // The current phase offset (also the filter number)
@@ -228,7 +142,7 @@ private:
     double _kp; // Proportional gain
     double _ki; // Integral gain
     double _error; // Total error signal
-    size_t _curr; // The current arm of the bank
+    int _curr; // The current arm of the bank
 public:
     /**
      * @brief Symbol recovery will receive an input sample stream and output decoded symbols (bytes) according to a provided constellation.
@@ -241,14 +155,14 @@ public:
      * @param constellation A constellation object that encodes the data
      * @param filter_bandwidth The bandwidth of the matched filter
      */
-    symbol_recovery(const size_t& sps, const double& loop_bandwidth, const size_t& num_filters, 
-                    const double& max_deviation, const constellation& constellation, const double& filter_bandwidth)
+    phase_recovery(const size_t& sps, const double& loop_bandwidth, const size_t& num_filters, 
+                    const double& max_deviation, const double& filter_bandwidth)
         : _sps(sps), _bandwidth(loop_bandwidth), _filter_bandwidth(filter_bandwidth), 
-        _n_filters(num_filters), _constel(constellation), _phase(num_filters/2.0),
+        _n_filters(num_filters), _phase(num_filters/2.0),
         _max_deviation(max_deviation), _deviation(0.0), _damp(0.0), _kp(0.0), _ki(0.0), _error(0.0), _curr(0)
     {
         // Generate the polyphase prototype
-        std::vector<double> prototype = root_nyquist(_n_filters, _n_filters, 1.0/sps, _filter_bandwidth, 8*_sps*_n_filters);
+        std::vector<double> prototype = root_nyquist(_n_filters, _n_filters*_sps, 1.0, _filter_bandwidth, 8*_sps*_n_filters);
         _bank = polyphase_filter_bank(prototype, _n_filters);
 
         // Update internal parameters of the control loop
@@ -289,9 +203,6 @@ public:
     void set_max_deviation(const double& deviation){
         _max_deviation = deviation;
     }
-    void set_constellation(const constellation& constel){
-        _constel = constel;
-    }
 
     void update_filter(){
         std::vector<double> prototype = root_nyquist(_n_filters, _n_filters, 1.0/_sps, _filter_bandwidth, 8*_sps*_n_filters);
@@ -310,33 +221,113 @@ public:
      * 
      * @param samples 
      */
-    void operate(std::vector<std::complex<double>> samples){
-        size_t i = 0;
-        size_t j = 0;
-        while(i < samples.size()){
+    std::vector<std::complex<double>> operate(std::vector<std::complex<double>> samples){
+        // std::vector<std::complex<double>> output(samples.size() / _sps, 0.0);
+        std::vector<std::complex<double>> output;
+        output.reserve(samples.size() / _sps);
+        for(size_t i = 0; i < samples.size(); i += _n_filters){
             _curr = std::floor(_phase);
 
-            // Wrap around our filter bank to the proper arm
+            if(_curr < 0) _curr = _n_filters - ((_n_filters + std::abs(_curr)) % _n_filters);
+            if(_curr >= _n_filters) _curr = _curr % _n_filters;
 
-            auto v = _bank.filter(samples[j], _curr);
-            _phase = _phase + _deviation;
+            auto v = _bank.filter(samples[i], _curr);
+            _phase += _deviation;
+            // output[i] = v;
+            output.push_back(v);
 
-            auto dv = _bank.deriv_filter(samples[j], _curr);
-            double real_err = v.real() * dv.real();
-            double imag_err = v.imag() * dv.imag();
-            _error = (real_err + imag_err) / 2.0;
+            auto diff = _bank.deriv_filter(samples[i], _curr);
+            // auto err_r = output[i].real() * diff.real();
+            // auto err_i = output[i].imag() * diff.imag();
+            auto err_r = v.real() * diff.real();
+            auto err_i = v.imag() * diff.imag();
+            _error = (err_r + err_i) / 2.0;
 
-            for(size_t s = 0; s < _sps; ++s){
-                _deviation += _ki * _error;
-                _phase += _deviation + _kp * _error;
-            }
+            _deviation += _ki * _error;
+            _phase += _deviation + _kp * _error;
 
             _deviation = 0.5 * (std::abs(_deviation + _max_deviation) - std::abs(_deviation - _max_deviation));
-
-            i++;
-            j += _sps;
         }
+
+        return output;
     }
+};
+
+/**
+ * @brief Symbol_recovery is meant for recovering the actual bits encoded by the data
+ * 
+ */
+class symbol_recovery{
+private:
+    constellation* _constel;
+
+    double _bandwidth;
+    double _phase;
+    double _freq;
+    double _min_freq;
+    double _max_freq;
+    double _alpha;
+    double _beta;
+
+    static constexpr double PI = std::numbers::pi;
+public:
+    symbol_recovery(constellation* constel, double loop_bandwidth, double min_freq, double max_freq)
+        : _constel(constel), _bandwidth(loop_bandwidth), _min_freq(min_freq), _max_freq(max_freq){
+        _phase = 0.0;
+        _freq = 0.0;
+        const double damping = std::sqrt(2.0) / 2.0;
+        _alpha = (4.0 * damping * _bandwidth) / (1.0 + 2.0 * damping * _bandwidth + std::pow(_bandwidth, 2.0));
+        _beta = (4.0 * std::pow(_bandwidth, 2.0)) / (1.0 + 2.0 * damping * _bandwidth + std::pow(_bandwidth, 2.0));
+    }
+
+    std::vector<unsigned int> operate(const std::vector<std::complex<double>>& samples){
+        std::vector<unsigned int> output(samples.size());
+        for(size_t i = 0; i < samples.size(); ++i){
+            std::complex<double> nco = std::polar(1.0, _phase);
+            std::complex<double> v = samples[i] * nco;
+
+            unsigned int idx = _constel->decision(v);
+            const double error = -std::arg(samples[i] * std::conj(_constel->get_point(idx)));
+
+            _freq += _beta * error;
+            _phase += _freq + _alpha * error;
+
+            if(_phase >= 2.0 * PI) _phase = std::fmod(_phase, 2.0 * PI);
+            if(_phase <  -2.0 * PI) _phase = std::fmod(_phase, -2.0 * PI);
+
+            _freq = _freq > _max_freq ? _max_freq : _freq;
+            _freq = _freq < _min_freq ? _min_freq : _freq;
+
+            output[i] = idx;
+        }
+        return output;
+    }
+
+    std::vector<std::complex<double>> operate2(const std::vector<std::complex<double>>& samples){
+        std::vector<std::complex<double>> output(samples.size());
+        for(size_t i = 0; i < samples.size(); ++i){
+            std::complex<double> nco = std::polar(1.0, _phase);
+            std::complex<double> v = samples[i] * nco;
+
+            unsigned int idx = _constel->decision(v);
+            const double error = -std::arg(samples[i] * std::conj(_constel->get_point(idx)));
+
+            _freq += _beta * error;
+            _phase += _freq + _alpha * error;
+
+            if(_phase >= 2.0 * PI) _phase = std::fmod(_phase, 2.0 * PI);
+            if(_phase <  -2.0 * PI) _phase = std::fmod(_phase, -2.0 * PI);
+
+            _freq = _freq > _max_freq ? _max_freq : _freq;
+            _freq = _freq < _min_freq ? _min_freq : _freq;
+
+            output[i] = v;
+        }
+        return output;
+    }
+
+
+
 };
 
 

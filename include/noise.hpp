@@ -14,6 +14,48 @@
 #include "constellations.hpp"
 
 /**
+ * @brief Fast noise class for AWGN
+ */
+class fast_noise{
+private:
+    std::mt19937 _gen;
+    std::normal_distribution<double> _d{0.0, 1.0};
+public:
+    fast_noise(): _gen(std::random_device{}()){}
+    std::complex<double> noise_voltage(double voltage){return voltage * std::complex<double>(_d(_gen), _d(_gen));}
+
+};
+
+class channel_model{
+private:
+    double _freq_offset;
+    double _noise_voltage;
+    fast_noise _awgn{};
+    std::complex<double> _accum;
+
+    static constexpr double PI = std::numbers::pi;
+public:
+    channel_model(double frequency_offset, double noise_voltage)
+        :_freq_offset(frequency_offset), _noise_voltage(noise_voltage), _accum(1.0){}
+
+    /**
+     * @brief Apply offsets and noise to a single sample
+     * @param sample 
+     */
+    void operate(std::complex<double>* sample){
+        *sample *= _accum;
+        const std::complex<double> w = std::polar(1.0, 2.0 * PI * _freq_offset);
+        std::complex<double> noise = _awgn.noise_voltage(_noise_voltage);
+        _accum *= w;
+        *sample += noise;
+    }
+
+    void set_offset(double frequency_offset){_freq_offset = frequency_offset;}
+    void set_noise(double noise_power){_noise_voltage = noise_power;}
+
+};
+
+/**
  * @brief Generic class for generating different types of signals. Intended to work on signals of arithmetic type _T.
  */
 template<class _T>
@@ -25,48 +67,32 @@ public:
     noise(): _gen(std::random_device{}()){}
 
     /**
-     * @brief Corrupts the provided signal with AWGN.
-     * @tparam InputIt 
-     * @param first 
-     * @param last 
-     * @param snr 
-     */
-    template<class InputIt>
-    requires std::input_iterator<InputIt>
-    void awgn(InputIt first, InputIt last, const double& snr){
-        std::normal_distribution<_T> _d(-1.0, 1.0);
-        auto wgn = [this, &_d, &snr](_T& x){x += std::sqrt(snr)*_d(_gen);};
-        std::for_each(first, last, wgn);
-    }
-
-    /**
-     * @brief Generate random numbers in the range [-1, 1]
-     * @param len 
-     * @return _T* 
-     */
-    _T* randomSignal(std::size_t len){
-        // Make a signal in the range [-1, 1] of size len
-        _T* out = new _T[len];
-        std::uniform_real_distribution<_T> dis(-1.0, 1.0);
-        for(std::size_t i = 0; i < len; ++i)
-            out[i] = dis(_gen);
-        return out;
-    }
-
-    /**
      * @brief Creates a random M-ary byte
      * @tparam M 
      * @return std::bitset<M> 
      */
-    int randomValue(const int& M){
-        std::uniform_int_distribution<int> dis(0, std::pow(2, M)-1);
+    unsigned int random_m_ary(const int& M){
+        std::uniform_int_distribution<unsigned int> dis(0, std::pow(2, M)-1);
         return dis(_gen);
     }
 
-    std::complex<double> randomConstellationPoint(const constellation& constel){
+    std::complex<double> random_constellation_point(constellation* constel){
+        return constel->get_point(random_m_ary(constel->get_bps()));
+    }
+
+    double random_floating(){
         std::normal_distribution<_T> _d(-1.0, 1.0);
-        auto point = constel.get_point(randomValue((constel.get_bps())));
-        return point + std::complex<double>(0.05*_d(_gen), 0.05*_d(_gen));
+        return _d(_gen);
+    }
+
+    unsigned int random_bit(){
+        std::uniform_int_distribution<unsigned int> dis(0, 1);
+        return dis(_gen);
+    }
+
+    int random_int_range(int lower, int upper){
+        std::uniform_int_distribution<int> dis(lower, upper);
+        return dis(_gen);
     }
 
 

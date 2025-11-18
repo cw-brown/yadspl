@@ -295,7 +295,7 @@ public:
                 work += _taps[tap_idx] * std::complex<__T>(std::cos(tap_idx*lambda), -1.0*std::sin(tap_idx*lambda));
             }
             out.first[idx] = lambda;
-            out.second[idx] = 20.0 * std::log10(std::norm(work));
+            out.second[idx] = 10.0 * std::log10(std::norm(work));
         }
         return out;
     }

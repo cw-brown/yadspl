@@ -66,3 +66,8 @@ void glfw_frame(){
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
 }
+
+void key_call(GLFWwindow* window, int key, int, int action, int){
+    if(key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
+        glfwSetWindowShouldClose(window, GLFW_TRUE);
+}
