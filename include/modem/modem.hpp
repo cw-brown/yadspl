@@ -20,6 +20,7 @@
 #include <numeric>
 #include <cmath>
 #include <bitset>
+#include <iostream>
 
 #include "constellations.hpp"
 
